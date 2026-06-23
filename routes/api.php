@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
 use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Controllers\Api\V1\ReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -77,6 +78,12 @@ Route::prefix('v1')->group(function () {
             Route::get('/top-entries', [DashboardController::class, 'topEntries']);
         });
 
-        // Reports — Fase 5
+        // Reports
+        Route::prefix('reports')->group(function () {
+            Route::post('/generate', [ReportController::class, 'generate']);
+            Route::get('/jobs/{jobId}', [ReportController::class, 'jobStatus']);
+            Route::get('/download/{jobId}', [ReportController::class, 'download']);
+            Route::get('/history', [ReportController::class, 'history']);
+        });
     });
 });
