@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CarbonEntryController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
 use App\Http\Controllers\Api\V1\ProjectController;
@@ -43,7 +44,18 @@ Route::prefix('v1')->group(function () {
         Route::put('/projects/{id}/members/{userId}', [ProjectController::class, 'updateMember']);
         Route::delete('/projects/{id}/members/{userId}', [ProjectController::class, 'removeMember']);
 
-        // Carbon Entries — Fase 3
+        // Carbon Entries
+        Route::prefix('projects/{projectId}/entries')->group(function () {
+            Route::get('/', [CarbonEntryController::class, 'index']);
+            Route::post('/', [CarbonEntryController::class, 'store']);
+            Route::post('/bulk', [CarbonEntryController::class, 'bulk']);
+            Route::get('/{id}', [CarbonEntryController::class, 'show']);
+            Route::put('/{id}', [CarbonEntryController::class, 'update']);
+            Route::delete('/{id}', [CarbonEntryController::class, 'destroy']);
+            Route::post('/{id}/submit', [CarbonEntryController::class, 'submit']);
+            Route::post('/{id}/approve', [CarbonEntryController::class, 'approve']);
+        });
+
         // Carbon Targets — Fase 4
         // Dashboard — Fase 4
         // Reports — Fase 5
