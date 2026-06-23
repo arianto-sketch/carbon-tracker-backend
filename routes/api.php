@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CarbonEntryController;
+use App\Http\Controllers\Api\V1\CarbonTargetController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
 use App\Http\Controllers\Api\V1\ProjectController;
@@ -56,8 +58,25 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/approve', [CarbonEntryController::class, 'approve']);
         });
 
-        // Carbon Targets — Fase 4
-        // Dashboard — Fase 4
+        // Carbon Targets
+        Route::prefix('projects/{projectId}/targets')->group(function () {
+            Route::get('/', [CarbonTargetController::class, 'index']);
+            Route::post('/', [CarbonTargetController::class, 'store']);
+            Route::get('/progress', [CarbonTargetController::class, 'progress']);
+            Route::get('/{id}', [CarbonTargetController::class, 'show']);
+            Route::put('/{id}', [CarbonTargetController::class, 'update']);
+            Route::delete('/{id}', [CarbonTargetController::class, 'destroy']);
+        });
+
+        // Dashboard
+        Route::prefix('dashboard')->group(function () {
+            Route::get('/summary', [DashboardController::class, 'summary']);
+            Route::get('/projects', [DashboardController::class, 'projects']);
+            Route::get('/trend', [DashboardController::class, 'trend']);
+            Route::get('/category-breakdown', [DashboardController::class, 'categoryBreakdown']);
+            Route::get('/top-entries', [DashboardController::class, 'topEntries']);
+        });
+
         // Reports — Fase 5
     });
 });
