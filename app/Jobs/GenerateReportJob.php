@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Exports\CarbonReportExport;
 use App\Models\ReportJob;
+use App\Services\ReportService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,19 +22,20 @@ class GenerateReportJob implements ShouldQueue
 
     public function __construct(private ReportJob $reportJob) {}
 
-    public function handle(): void
+    public function handle(ReportService $reportService): void
     {
         $this->reportJob->update(['status' => 'processing']);
 
         try {
             $filters = $this->reportJob->filters;
             $format = $this->reportJob->format;
+            $allowedProjectIds = $reportService->allowedProjectIds($this->reportJob->user);
 
             $fileName = 'carbon-report-' . $this->reportJob->id . '-' . now()->format('Ymd_His') . '.' . $format;
             $filePath = 'reports/' . $fileName;
 
             Excel::store(
-                new CarbonReportExport($filters),
+                new CarbonReportExport($filters, $allowedProjectIds),
                 $filePath,
                 'local',
                 $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
