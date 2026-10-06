@@ -35,7 +35,7 @@ class ProjectResource extends JsonResource
             return null;
         }
 
-        // Pakai relasi yang sudah dimuat (detail project) supaya list tidak N+1
+        // Detail project sudah memuat projectMembers; list project masih 1 query per item (maks 15/halaman)
         if ($this->relationLoaded('projectMembers')) {
             return $this->projectMembers->firstWhere('user_id', $userId)?->role;
         }
