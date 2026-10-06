@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CarbonEntryController;
+use App\Http\Controllers\Api\V1\CarbonEntryImportController;
 use App\Http\Controllers\Api\V1\CarbonTargetController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
@@ -68,6 +69,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [CarbonEntryController::class, 'index']);
             Route::post('/', [CarbonEntryController::class, 'store']);
             Route::post('/bulk', [CarbonEntryController::class, 'bulk']);
+            Route::get('/import/template', [CarbonEntryImportController::class, 'template']);
+            Route::post('/import/preview', [CarbonEntryImportController::class, 'preview']);
+            Route::post('/import', [CarbonEntryImportController::class, 'store']);
             Route::get('/{id}', [CarbonEntryController::class, 'show']);
             Route::get('/{id}/history', [CarbonEntryController::class, 'history']);
             Route::post('/{id}/attachment', [CarbonEntryController::class, 'uploadAttachment']);

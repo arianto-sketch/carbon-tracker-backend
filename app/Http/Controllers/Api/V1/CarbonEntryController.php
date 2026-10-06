@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Controllers\Concerns\AuthorizesProjectEntries;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CarbonEntry\BulkStoreCarbonEntryRequest;
 use App\Http\Requests\CarbonEntry\StoreCarbonEntryRequest;
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\Storage;
 
 class CarbonEntryController extends Controller
 {
+    use AuthorizesProjectEntries;
+
     public function __construct(private CarbonEntryService $service) {}
 
     public function index(Request $request, int $projectId): JsonResponse
@@ -212,13 +215,6 @@ class CarbonEntryController extends Controller
         ], 201);
     }
 
-    private function authorizeProjectAccess(Request $request, Project $project): void
-    {
-        if (! $request->user()->isAdmin() && ! $project->hasUser($request->user()->id)) {
-            abort(403, 'Akses ditolak. Anda bukan member project ini.');
-        }
-    }
-
     /**
      * Approve/tolak: owner project atau admin, dan bukan pembuat maupun pengubah terakhir entri (prinsip 4-eyes).
      */
@@ -237,24 +233,6 @@ class CarbonEntryController extends Controller
         // updated_by = pengubah isi terakhir (submit/approve/reject tidak mengubahnya)
         if ($entry->updated_by !== null && (int) $entry->updated_by === (int) $user->id) {
             abort(403, 'Tidak bisa me-review entri yang isinya terakhir Anda ubah.');
-        }
-    }
-
-    /**
-     * Menulis entri: admin, atau owner/member project yang role globalnya bukan viewer.
-     */
-    private function authorizeProjectWrite(Request $request, Project $project): void
-    {
-        $user = $request->user();
-
-        if ($user->isAdmin()) {
-            return;
-        }
-
-        $projectRole = $project->getUserRole($user->id);
-
-        if ($user->role === 'viewer' || ! in_array($projectRole, ['owner', 'member'], true)) {
-            abort(403, 'Akses ditolak. Role Anda hanya bisa melihat entri.');
         }
     }
 }
