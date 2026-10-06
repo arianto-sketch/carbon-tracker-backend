@@ -48,7 +48,14 @@ class AuthHardeningTest extends TestCase
         }
 
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
-            ->assertStatus(429);
+            ->assertStatus(429)
+            ->assertHeader('Retry-After');
+    }
+
+    public function test_login_with_non_string_email_is_a_validation_error_not_500(): void
+    {
+        $this->postJson('/api/v1/auth/login', ['email' => ['a@b.c'], 'password' => 'x'])
+            ->assertStatus(422);
     }
 
     public function test_unauthenticated_browser_request_gets_401_not_500(): void

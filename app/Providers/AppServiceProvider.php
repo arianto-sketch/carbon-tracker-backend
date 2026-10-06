@@ -20,11 +20,13 @@ class AppServiceProvider extends ServiceProvider
 
         // Maks 5 percobaan login per menit untuk kombinasi email + IP
         RateLimiter::for('login', function (Request $request) {
+            $email = $request->input('email');
+
             return Limit::perMinute(5)
-                ->by(Str::lower((string) $request->input('email')).'|'.$request->ip())
-                ->response(fn () => response()->json([
-                    'message' => 'Terlalu banyak percobaan login. Coba lagi dalam 1 menit.',
-                ], 429));
+                ->by((is_string($email) ? Str::lower($email) : '').'|'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Terlalu banyak percobaan login. Coba lagi nanti.',
+                ], 429, $headers));
         });
     }
 }

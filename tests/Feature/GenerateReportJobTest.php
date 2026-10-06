@@ -23,6 +23,14 @@ class GenerateReportJobTest extends TestCase
         ]);
     }
 
+    public function test_job_timeout_is_shorter_than_queue_retry_after(): void
+    {
+        // Kalau tidak, worker lain mengambil job yang masih berjalan dan attempt terbuang
+        $job = new GenerateReportJob($this->pendingJob());
+
+        $this->assertLessThan(config('queue.connections.database.retry_after'), $job->timeout);
+    }
+
     public function test_successful_run_marks_job_done(): void
     {
         Excel::fake();
