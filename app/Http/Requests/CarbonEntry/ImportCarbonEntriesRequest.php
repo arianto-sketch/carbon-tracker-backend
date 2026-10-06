@@ -20,9 +20,9 @@ class ImportCarbonEntriesRequest extends FormRequest
     {
         return [
             'rows'                      => ['required', 'array', 'min:1', 'max:'.CarbonEntryImportService::MAX_ROWS],
-            'rows.*.entry_date'         => ['required', 'date', 'before_or_equal:'.now(config('app.business_timezone'))->toDateString()],
+            'rows.*.entry_date'         => ['required', 'date_format:Y-m-d', 'before_or_equal:'.now(config('app.business_timezone'))->toDateString()],
             'rows.*.emission_factor_id' => ['required', Rule::exists('emission_factors', 'id')->where('is_active', true)],
-            'rows.*.quantity'           => ['required', 'numeric', 'min:0.0001'],
+            'rows.*.quantity'           => ['required', 'numeric', 'min:0.0001', 'max:'.CarbonEntryImportService::MAX_QUANTITY],
             'rows.*.description'        => ['nullable', 'string', 'max:1000'],
             'rows.*.vendor_name'        => ['nullable', 'string', 'max:255'],
             'rows.*.activity_type'      => ['nullable', 'string', 'max:255'],

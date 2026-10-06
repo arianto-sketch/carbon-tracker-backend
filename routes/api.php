@@ -70,7 +70,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/', [CarbonEntryController::class, 'store']);
             Route::post('/bulk', [CarbonEntryController::class, 'bulk']);
             Route::get('/import/template', [CarbonEntryImportController::class, 'template']);
-            Route::post('/import/preview', [CarbonEntryImportController::class, 'preview']);
+            Route::post('/import/preview', [CarbonEntryImportController::class, 'preview'])->middleware('throttle:10,1');
             Route::post('/import', [CarbonEntryImportController::class, 'store']);
             Route::get('/{id}', [CarbonEntryController::class, 'show']);
             Route::get('/{id}/history', [CarbonEntryController::class, 'history']);

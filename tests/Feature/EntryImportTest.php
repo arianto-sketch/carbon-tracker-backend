@@ -112,6 +112,59 @@ class EntryImportTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors('file');
     }
 
+    public function test_xlsx_with_huge_uncompressed_content_is_rejected_before_parsing(): void
+    {
+        // "Zip bomb" kecil: beberapa KB terkompresi, puluhan MB setelah diekstrak
+        $path = tempnam(sys_get_temp_dir(), 'bomb');
+        $zip = new \ZipArchive;
+        $zip->open($path, \ZipArchive::OVERWRITE);
+        $zip->addFromString('xl/worksheets/sheet1.xml', str_repeat(' ', 30 * 1024 * 1024));
+        $zip->close();
+
+        $this->preview($this->owner, UploadedFile::fake()->createWithContent('bomb.xlsx', file_get_contents($path)))
+            ->assertStatus(422)->assertJsonValidationErrors('file');
+        @unlink($path);
+    }
+
+    public function test_csv_with_too_many_columns_is_rejected_before_parsing(): void
+    {
+        $wide = UploadedFile::fake()->createWithContent('wide.csv', self::HEADER.str_repeat(',x', 5000)."\n2026-03-01,gasoline_vehicle,1\n");
+
+        $this->preview($this->owner, $wide)->assertStatus(422)->assertJsonValidationErrors('file');
+    }
+
+    public function test_unreadable_file_returns_422_not_500(): void
+    {
+        $this->preview($this->owner, UploadedFile::fake()->createWithContent('rusak.xlsx', 'ini bukan file excel'))
+            ->assertStatus(422)->assertJsonValidationErrors('file');
+    }
+
+    public function test_dates_must_be_iso_formatted(): void
+    {
+        $this->preview($this->owner, $this->csv(['05/03/2026,gasoline_vehicle,10,,,']))
+            ->assertOk()
+            ->assertJsonPath('data.valid_count', 0)
+            ->assertJsonPath('data.invalid_count', 1);
+    }
+
+    public function test_extreme_values_are_reported_as_row_errors_without_crashing(): void
+    {
+        $this->preview($this->owner, $this->csv([
+            '1e20,gasoline_vehicle,10,,,',
+            '2026-03-01,gasoline_vehicle,1e400,,,',
+            '2026-03-01,gasoline_vehicle,99999999999,,,',
+        ]))->assertOk()->assertJsonPath('data.invalid_count', 3);
+    }
+
+    public function test_preview_is_rate_limited(): void
+    {
+        foreach (range(1, 10) as $_) {
+            $this->preview($this->owner, $this->csv(['2026-03-01,gasoline_vehicle,1,,,']))->assertOk();
+        }
+
+        $this->preview($this->owner, $this->csv(['2026-03-01,gasoline_vehicle,1,,,']))->assertStatus(429);
+    }
+
     public function test_commit_creates_all_rows_as_draft(): void
     {
         $factor = $this->gasolineFactor();
