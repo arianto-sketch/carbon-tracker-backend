@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Services\CarbonEntryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CarbonEntryController extends Controller
 {
@@ -71,6 +72,58 @@ class CarbonEntryController extends Controller
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
 
         return response()->json(['data' => $this->service->history($entry)]);
+    }
+
+    public function uploadAttachment(Request $request, int $projectId, int $id): JsonResponse
+    {
+        $project = Project::findOrFail($projectId);
+        $this->authorizeProjectWrite($request, $project);
+        $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
+
+        $request->validate(
+            ['file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120']],
+            [
+                'file.required' => 'File lampiran wajib dipilih.',
+                'file.mimes'    => 'Lampiran harus berupa PDF, JPG, atau PNG.',
+                'file.max'      => 'Ukuran lampiran maksimal 5 MB.',
+            ],
+        );
+
+        $entry = $this->service->attach($entry, $request->file('file'), $request->user());
+
+        return response()->json([
+            'data'    => new CarbonEntryResource($entry),
+            'message' => 'Lampiran berhasil diunggah.',
+        ]);
+    }
+
+    public function downloadAttachment(Request $request, int $projectId, int $id)
+    {
+        $project = Project::findOrFail($projectId);
+        $this->authorizeProjectAccess($request, $project);
+        $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
+
+        $disk = Storage::disk($this->service->attachmentDisk());
+
+        if (! $entry->attachment_path || ! $disk->exists($entry->attachment_path)) {
+            return response()->json(['message' => 'Entri ini belum punya lampiran.'], 404);
+        }
+
+        return $disk->download($entry->attachment_path, $entry->attachment_name);
+    }
+
+    public function deleteAttachment(Request $request, int $projectId, int $id): JsonResponse
+    {
+        $project = Project::findOrFail($projectId);
+        $this->authorizeProjectWrite($request, $project);
+        $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
+
+        $entry = $this->service->detach($entry, $request->user());
+
+        return response()->json([
+            'data'    => new CarbonEntryResource($entry),
+            'message' => 'Lampiran berhasil dihapus.',
+        ]);
     }
 
     public function update(UpdateCarbonEntryRequest $request, int $projectId, int $id): JsonResponse

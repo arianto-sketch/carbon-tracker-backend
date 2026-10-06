@@ -24,6 +24,7 @@ class CarbonEntry extends Model
         'vendor_name',
         'activity_type',
         'attachment_path',
+        'attachment_name',
         'status',
         'approved_by',
         'approved_at',

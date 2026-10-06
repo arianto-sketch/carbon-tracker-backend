@@ -62,6 +62,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/bulk', [CarbonEntryController::class, 'bulk']);
             Route::get('/{id}', [CarbonEntryController::class, 'show']);
             Route::get('/{id}/history', [CarbonEntryController::class, 'history']);
+            Route::post('/{id}/attachment', [CarbonEntryController::class, 'uploadAttachment']);
+            Route::get('/{id}/attachment', [CarbonEntryController::class, 'downloadAttachment']);
+            Route::delete('/{id}/attachment', [CarbonEntryController::class, 'deleteAttachment']);
             Route::put('/{id}', [CarbonEntryController::class, 'update']);
             Route::delete('/{id}', [CarbonEntryController::class, 'destroy']);
             Route::post('/{id}/submit', [CarbonEntryController::class, 'submit']);

@@ -7,15 +7,23 @@ use App\Models\CarbonEntry;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
 class CarbonEntryService
 {
-    /** Field teknis yang tidak ditampilkan di riwayat perubahan. */
-    private const HISTORY_HIDDEN_FIELDS = ['updated_at', 'updated_by', 'created_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at'];
+    /** Field yang boleh tampil di riwayat perubahan (whitelist: field teknis & path file internal tidak ikut). */
+    private const HISTORY_FIELDS = [
+        'status', 'quantity', 'entry_date', 'co2e_kg', 'emission_factor_id', 'description',
+        'vendor_name', 'activity_type', 'rejection_reason', 'attachment_name',
+    ];
+
+    private const ATTACHMENT_DISK = 'local';
 
     /** Perubahan status yang ditampilkan sebagai event tersendiri. */
     private const STATUS_EVENTS = ['submitted', 'approved', 'rejected'];
@@ -58,7 +66,7 @@ class CarbonEntryService
                 $changes = [];
 
                 if ($log->action === 'updated') {
-                    foreach (Arr::except($log->new_values ?? [], self::HISTORY_HIDDEN_FIELDS) as $field => $new) {
+                    foreach (Arr::only($log->new_values ?? [], self::HISTORY_FIELDS) as $field => $new) {
                         $changes[$field] = ['old' => $log->old_values[$field] ?? null, 'new' => $new];
                     }
                 }
@@ -75,6 +83,58 @@ class CarbonEntryService
                 ];
             })
             ->all();
+    }
+
+    /**
+     * Simpan/ganti lampiran bukti. File lama baru dihapus setelah data entri tersimpan.
+     */
+    public function attach(CarbonEntry $entry, UploadedFile $file, User $user): CarbonEntry
+    {
+        $this->ensureEditable($entry, 'Lampiran hanya bisa diubah pada entry berstatus draft atau ditolak.');
+
+        $oldPath = $entry->attachment_path;
+        $path = $file->storeAs(
+            "attachments/{$entry->project_id}/{$entry->id}",
+            Str::uuid().'.'.$file->extension(),
+            self::ATTACHMENT_DISK,
+        );
+
+        $entry->update([
+            'attachment_path' => $path,
+            'attachment_name' => mb_substr($file->getClientOriginalName(), 0, 255),
+            'updated_by'      => $user->id,
+        ]);
+
+        if ($oldPath) {
+            Storage::disk(self::ATTACHMENT_DISK)->delete($oldPath);
+        }
+
+        return $entry->fresh();
+    }
+
+    public function detach(CarbonEntry $entry, User $user): CarbonEntry
+    {
+        $this->ensureEditable($entry, 'Lampiran hanya bisa dihapus pada entry berstatus draft atau ditolak.');
+
+        if ($entry->attachment_path) {
+            Storage::disk(self::ATTACHMENT_DISK)->delete($entry->attachment_path);
+        }
+
+        $entry->update(['attachment_path' => null, 'attachment_name' => null, 'updated_by' => $user->id]);
+
+        return $entry->fresh();
+    }
+
+    public function attachmentDisk(): string
+    {
+        return self::ATTACHMENT_DISK;
+    }
+
+    private function ensureEditable(CarbonEntry $entry, string $message): void
+    {
+        if (! $entry->isEditable()) {
+            throw ValidationException::withMessages(['status' => [$message]]);
+        }
     }
 
     public function create(array $data, Project $project, User $creator): CarbonEntry
