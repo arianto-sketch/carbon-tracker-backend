@@ -62,6 +62,30 @@ class CarbonTargetService
         $target->delete();
     }
 
+    /**
+     * Target tahun $year di project yang bisa diakses user dengan pemakaian >= $threshold %,
+     * urut dari pemakaian tertinggi. level: exceeded (>= 100%) atau warning.
+     */
+    public function getAlerts(User $user, int $year, float $threshold = 80): array
+    {
+        $projects = Project::query()
+            ->when(! $user->isAdmin(), fn ($q) => $q->whereHas('projectMembers', fn ($m) => $m->where('user_id', $user->id)))
+            ->whereHas('carbonTargets', fn ($q) => $q->where('period_year', $year))
+            ->get();
+
+        return $projects
+            ->flatMap(fn (Project $project) => $this->getProgress($project)
+                ->filter(fn (array $p) => (int) $p['period_year'] === $year && $p['percentage_used'] >= $threshold)
+                ->map(fn (array $p) => $p + [
+                    'project_id'   => $project->id,
+                    'project_name' => $project->name,
+                    'level'        => $p['percentage_used'] >= 100 ? 'exceeded' : 'warning',
+                ]))
+            ->sortByDesc('percentage_used')
+            ->values()
+            ->all();
+    }
+
     public function getProgress(Project $project): Collection
     {
         $targets = CarbonTarget::with('category')

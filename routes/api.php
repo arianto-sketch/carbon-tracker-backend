@@ -101,6 +101,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/trend', [DashboardController::class, 'trend']);
             Route::get('/category-breakdown', [DashboardController::class, 'categoryBreakdown']);
             Route::get('/top-entries', [DashboardController::class, 'topEntries']);
+            Route::get('/target-alerts', [DashboardController::class, 'targetAlerts']);
         });
 
         // Reports
