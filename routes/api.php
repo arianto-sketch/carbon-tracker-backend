@@ -13,10 +13,10 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
 
     // Auth — public
-    Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
     // Auth — protected
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::post('/auth/register', [AuthController::class, 'register']);
         Route::get('/auth/me', [AuthController::class, 'me']);
@@ -29,9 +29,9 @@ Route::prefix('v1')->group(function () {
         // Emission Factors
         Route::get('/emission-factors', [EmissionFactorController::class, 'index']);
         Route::get('/emission-factors/{id}', [EmissionFactorController::class, 'show']);
-        Route::post('/emission-factors', [EmissionFactorController::class, 'store']);
-        Route::put('/emission-factors/{id}', [EmissionFactorController::class, 'update']);
-        Route::delete('/emission-factors/{id}', [EmissionFactorController::class, 'destroy']);
+        Route::post('/emission-factors', [EmissionFactorController::class, 'store'])->middleware('admin');
+        Route::put('/emission-factors/{id}', [EmissionFactorController::class, 'update'])->middleware('admin');
+        Route::delete('/emission-factors/{id}', [EmissionFactorController::class, 'destroy'])->middleware('admin');
 
         // Projects
         Route::get('/projects', [ProjectController::class, 'index']);

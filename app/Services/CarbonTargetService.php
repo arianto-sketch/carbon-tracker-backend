@@ -7,6 +7,7 @@ use App\Models\CarbonTarget;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class CarbonTargetService
 {
@@ -21,6 +22,8 @@ class CarbonTargetService
 
     public function create(array $data, Project $project, User $creator): CarbonTarget
     {
+        $this->ensureUniquePeriod($data, $project);
+
         return CarbonTarget::create([
             'project_id'            => $project->id,
             'category_id'           => $data['category_id'] ?? null,
@@ -37,6 +40,8 @@ class CarbonTargetService
 
     public function update(CarbonTarget $target, array $data, User $updater): CarbonTarget
     {
+        $this->ensureUniquePeriod($data, $target->project, $target->id);
+
         $target->update([
             'category_id'           => $data['category_id'] ?? null,
             'period_type'           => $data['period_type'],
@@ -87,6 +92,30 @@ class CarbonTargetService
                 'reduction_percentage'  => $target->reduction_percentage ? (float) $target->reduction_percentage : null,
             ];
         });
+    }
+
+    /**
+     * Satu target aktif per project + kategori + periode. Dicek di aplikasi karena
+     * unique index DB tidak bisa menangani kolom NULL dan baris soft-deleted.
+     */
+    private function ensureUniquePeriod(array $data, Project $project, ?int $ignoreId = null): void
+    {
+        $categoryId = $data['category_id'] ?? null;
+        $periodValue = $data['period_value'] ?? null;
+
+        $exists = CarbonTarget::where('project_id', $project->id)
+            ->where('period_type', $data['period_type'])
+            ->where('period_year', $data['period_year'])
+            ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId), fn ($q) => $q->whereNull('category_id'))
+            ->when($periodValue, fn ($q) => $q->where('period_value', $periodValue), fn ($q) => $q->whereNull('period_value'))
+            ->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'period_type' => ['Target untuk kategori dan periode ini sudah ada.'],
+            ]);
+        }
     }
 
     private function getActualForTarget(CarbonTarget $target, Project $project): float

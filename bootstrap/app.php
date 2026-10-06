@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\CheckAdminRole;
+use App\Http\Middleware\EnsureUserIsActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,7 +17,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'admin'  => CheckAdminRole::class,
+            'active' => EnsureUserIsActive::class,
+        ]);
+
+        // API-only: tidak ada route "login", jadi guest tidak di-redirect (hasilnya 401 JSON, bukan 500)
+        $middleware->redirectGuestsTo(fn () => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

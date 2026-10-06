@@ -11,6 +11,13 @@ class ReportService
 {
     public function generate(array $filters, User $user): ReportJob
     {
+        $allowed = $this->allowedProjectIds($user);
+        $requested = $filters['project_ids'] ?? [];
+
+        if ($allowed !== null && array_diff($requested, $allowed)) {
+            abort(403, 'Akses ditolak. Anda bukan member dari project yang diminta.');
+        }
+
         $reportJob = ReportJob::create([
             'user_id' => $user->id,
             'filters' => $filters,
@@ -33,5 +40,17 @@ class ReportService
     public function getJob(int $jobId, User $user): ReportJob
     {
         return ReportJob::where('user_id', $user->id)->findOrFail($jobId);
+    }
+
+    /**
+     * Project yang boleh masuk laporan user ini. null = tanpa batasan (admin).
+     */
+    public function allowedProjectIds(?User $user): ?array
+    {
+        if ($user?->isAdmin()) {
+            return null;
+        }
+
+        return $user ? $user->projects()->pluck('projects.id')->all() : [];
     }
 }

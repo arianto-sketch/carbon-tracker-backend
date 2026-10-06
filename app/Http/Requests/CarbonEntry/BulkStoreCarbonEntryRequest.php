@@ -16,7 +16,7 @@ class BulkStoreCarbonEntryRequest extends FormRequest
         return [
             'entries'                        => ['required', 'array', 'min:1', 'max:100'],
             'entries.*.emission_factor_id'   => ['required', 'exists:emission_factors,id'],
-            'entries.*.entry_date'           => ['required', 'date', 'before_or_equal:tomorrow'],
+            'entries.*.entry_date'           => ['required', 'date', 'before_or_equal:' . now(config('app.business_timezone'))->toDateString()],
             'entries.*.quantity'             => ['required', 'numeric', 'min:0.0001'],
             'entries.*.description'          => ['nullable', 'string', 'max:1000'],
             'entries.*.vendor_name'          => ['nullable', 'string', 'max:255'],

@@ -67,6 +67,10 @@ return [
 
     'timezone' => 'UTC',
 
+    // Zona waktu bisnis untuk aturan berbasis tanggal kalender user (mis. "tidak boleh di masa depan").
+    // Timestamp tetap disimpan dalam 'timezone' di atas.
+    'business_timezone' => env('APP_BUSINESS_TIMEZONE', 'Asia/Jakarta'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

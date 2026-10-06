@@ -13,13 +13,20 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class CarbonReportExport implements FromQuery, WithHeadings, WithMapping, WithTitle, ShouldAutoSize, WithStyles
 {
-    public function __construct(private array $filters) {}
+    /**
+     * @param  array<int>|null  $allowedProjectIds  null = semua project (admin)
+     */
+    public function __construct(private array $filters, private ?array $allowedProjectIds = null) {}
 
     public function query()
     {
         $query = CarbonEntry::with(['project', 'category', 'emissionFactor', 'createdBy'])
             ->where('status', 'approved')
             ->orderBy('entry_date');
+
+        if ($this->allowedProjectIds !== null) {
+            $query->whereIn('project_id', $this->allowedProjectIds);
+        }
 
         if (! empty($this->filters['project_ids'])) {
             $query->whereIn('project_id', $this->filters['project_ids']);

@@ -14,7 +14,7 @@ class ReportController extends Controller
 
     public function generate(Request $request): JsonResponse
     {
-        $request->validate([
+        $filters = $request->validate([
             'project_ids'       => ['nullable', 'array'],
             'project_ids.*'     => ['integer', 'exists:projects,id'],
             'period_year'       => ['nullable', 'integer', 'min:2020', 'max:2100'],
@@ -25,7 +25,7 @@ class ReportController extends Controller
             'format'            => ['nullable', 'in:xlsx,csv'],
         ]);
 
-        $reportJob = $this->service->generate($request->all(), $request->user());
+        $reportJob = $this->service->generate($filters, $request->user());
 
         return response()->json([
             'data' => [
