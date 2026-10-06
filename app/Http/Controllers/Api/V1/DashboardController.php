@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Services\CarbonTargetService;
 use App\Services\DashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,6 +64,13 @@ class DashboardController extends Controller
         );
 
         return response()->json(['data' => $data]);
+    }
+
+    public function targetAlerts(Request $request, CarbonTargetService $targets): JsonResponse
+    {
+        $year = now(config('app.business_timezone'))->year;
+
+        return response()->json(['data' => $targets->getAlerts($request->user(), $year)]);
     }
 
     private function filters(Request $request, array $keys): array
