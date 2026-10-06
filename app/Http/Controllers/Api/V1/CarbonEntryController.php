@@ -56,7 +56,7 @@ class CarbonEntryController extends Controller
         $project = Project::findOrFail($projectId);
         $this->authorizeProjectAccess($request, $project);
 
-        $entry = CarbonEntry::with(['emissionFactor', 'category', 'createdBy', 'approvedBy'])
+        $entry = CarbonEntry::with(['emissionFactor', 'category', 'createdBy', 'approvedBy', 'rejectedBy'])
             ->where('project_id', $projectId)
             ->findOrFail($id);
 
@@ -105,23 +105,33 @@ class CarbonEntryController extends Controller
     public function approve(Request $request, int $projectId, int $id): JsonResponse
     {
         $project = Project::findOrFail($projectId);
-
-        $userRole = $project->getUserRole($request->user()->id);
-        if (! $request->user()->isAdmin() && $userRole !== 'owner') {
-            return response()->json(['message' => 'Hanya owner atau admin yang bisa approve entry.'], 403);
-        }
-
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
-
-        if ((int) $entry->created_by === (int) $request->user()->id) {
-            return response()->json(['message' => 'Tidak bisa meng-approve entri buatan sendiri.'], 403);
-        }
+        $this->authorizeReview($request, $project, $entry);
 
         $entry = $this->service->approve($entry, $request->user());
 
         return response()->json([
             'data'    => new CarbonEntryResource($entry->load('approvedBy')),
             'message' => 'Entry berhasil di-approve.',
+        ]);
+    }
+
+    public function reject(Request $request, int $projectId, int $id): JsonResponse
+    {
+        $project = Project::findOrFail($projectId);
+        $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
+        $this->authorizeReview($request, $project, $entry);
+
+        $data = $request->validate(
+            ['reason' => ['required', 'string', 'max:500']],
+            ['reason.required' => 'Alasan penolakan wajib diisi.', 'reason.max' => 'Alasan penolakan maksimal 500 karakter.'],
+        );
+
+        $entry = $this->service->reject($entry, $request->user(), $data['reason']);
+
+        return response()->json([
+            'data'    => new CarbonEntryResource($entry),
+            'message' => 'Entry ditolak dan dikembalikan ke pembuat.',
         ]);
     }
 
@@ -142,6 +152,27 @@ class CarbonEntryController extends Controller
     {
         if (! $request->user()->isAdmin() && ! $project->hasUser($request->user()->id)) {
             abort(403, 'Akses ditolak. Anda bukan member project ini.');
+        }
+    }
+
+    /**
+     * Approve/tolak: owner project atau admin, dan bukan pembuat maupun pengubah terakhir entri (prinsip 4-eyes).
+     */
+    private function authorizeReview(Request $request, Project $project, CarbonEntry $entry): void
+    {
+        $user = $request->user();
+
+        if (! $user->isAdmin() && $project->getUserRole($user->id) !== 'owner') {
+            abort(403, 'Hanya owner atau admin yang bisa me-review entry.');
+        }
+
+        if ((int) $entry->created_by === (int) $user->id) {
+            abort(403, 'Tidak bisa me-review entri buatan sendiri.');
+        }
+
+        // updated_by = pengubah isi terakhir (submit/approve/reject tidak mengubahnya)
+        if ($entry->updated_by !== null && (int) $entry->updated_by === (int) $user->id) {
+            abort(403, 'Tidak bisa me-review entri yang isinya terakhir Anda ubah.');
         }
     }
 
