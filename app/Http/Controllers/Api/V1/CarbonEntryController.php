@@ -41,7 +41,7 @@ class CarbonEntryController extends Controller
     public function store(StoreCarbonEntryRequest $request, int $projectId): JsonResponse
     {
         $project = Project::findOrFail($projectId);
-        $this->authorizeProjectAccess($request, $project);
+        $this->authorizeProjectWrite($request, $project);
 
         $entry = $this->service->create($request->validated(), $project, $request->user());
 
@@ -66,7 +66,7 @@ class CarbonEntryController extends Controller
     public function update(UpdateCarbonEntryRequest $request, int $projectId, int $id): JsonResponse
     {
         $project = Project::findOrFail($projectId);
-        $this->authorizeProjectAccess($request, $project);
+        $this->authorizeProjectWrite($request, $project);
 
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
         $entry = $this->service->update($entry, $request->validated(), $request->user());
@@ -80,7 +80,7 @@ class CarbonEntryController extends Controller
     public function destroy(Request $request, int $projectId, int $id): JsonResponse
     {
         $project = Project::findOrFail($projectId);
-        $this->authorizeProjectAccess($request, $project);
+        $this->authorizeProjectWrite($request, $project);
 
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
         $this->service->delete($entry);
@@ -91,7 +91,7 @@ class CarbonEntryController extends Controller
     public function submit(Request $request, int $projectId, int $id): JsonResponse
     {
         $project = Project::findOrFail($projectId);
-        $this->authorizeProjectAccess($request, $project);
+        $this->authorizeProjectWrite($request, $project);
 
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
         $entry = $this->service->submit($entry);
@@ -112,6 +112,11 @@ class CarbonEntryController extends Controller
         }
 
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
+
+        if ((int) $entry->created_by === (int) $request->user()->id) {
+            return response()->json(['message' => 'Tidak bisa meng-approve entri buatan sendiri.'], 403);
+        }
+
         $entry = $this->service->approve($entry, $request->user());
 
         return response()->json([
@@ -123,7 +128,7 @@ class CarbonEntryController extends Controller
     public function bulk(BulkStoreCarbonEntryRequest $request, int $projectId): JsonResponse
     {
         $project = Project::findOrFail($projectId);
-        $this->authorizeProjectAccess($request, $project);
+        $this->authorizeProjectWrite($request, $project);
 
         $results = $this->service->bulkCreate($request->entries, $project, $request->user());
 
@@ -137,6 +142,24 @@ class CarbonEntryController extends Controller
     {
         if (! $request->user()->isAdmin() && ! $project->hasUser($request->user()->id)) {
             abort(403, 'Akses ditolak. Anda bukan member project ini.');
+        }
+    }
+
+    /**
+     * Menulis entri: admin, atau owner/member project yang role globalnya bukan viewer.
+     */
+    private function authorizeProjectWrite(Request $request, Project $project): void
+    {
+        $user = $request->user();
+
+        if ($user->isAdmin()) {
+            return;
+        }
+
+        $projectRole = $project->getUserRole($user->id);
+
+        if ($user->role === 'viewer' || ! in_array($projectRole, ['owner', 'member'], true)) {
+            abort(403, 'Akses ditolak. Role Anda hanya bisa melihat entri.');
         }
     }
 }

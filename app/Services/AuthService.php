@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthService
 {
@@ -67,5 +68,11 @@ class AuthService
         }
 
         $user->update(['password' => Hash::make($newPassword)]);
+
+        // Cabut sesi di perangkat lain; token yang sedang dipakai tetap berlaku
+        $current = $user->currentAccessToken();
+        $user->tokens()
+            ->when($current instanceof PersonalAccessToken, fn ($q) => $q->whereKeyNot($current->getKey()))
+            ->delete();
     }
 }
