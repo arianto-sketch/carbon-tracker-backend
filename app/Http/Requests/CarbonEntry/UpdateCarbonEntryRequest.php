@@ -15,7 +15,7 @@ class UpdateCarbonEntryRequest extends FormRequest
     {
         return [
             'emission_factor_id' => ['required', 'exists:emission_factors,id'],
-            'entry_date'         => ['required', 'date', 'before_or_equal:tomorrow'],
+            'entry_date'         => ['required', 'date', 'before_or_equal:' . now(config('app.business_timezone'))->toDateString()],
             'quantity'           => ['required', 'numeric', 'min:0.0001'],
             'description'        => ['nullable', 'string', 'max:1000'],
             'vendor_name'        => ['nullable', 'string', 'max:255'],

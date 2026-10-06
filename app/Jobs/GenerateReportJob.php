@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
+use Throwable;
 
 class GenerateReportJob implements ShouldQueue
 {
@@ -26,33 +27,36 @@ class GenerateReportJob implements ShouldQueue
     {
         $this->reportJob->update(['status' => 'processing']);
 
-        try {
-            $filters = $this->reportJob->filters;
-            $format = $this->reportJob->format;
-            $allowedProjectIds = $reportService->allowedProjectIds($this->reportJob->user);
+        $filters = $this->reportJob->filters;
+        $format = $this->reportJob->format;
+        $allowedProjectIds = $reportService->allowedProjectIds($this->reportJob->user);
 
-            $fileName = 'carbon-report-' . $this->reportJob->id . '-' . now()->format('Ymd_His') . '.' . $format;
-            $filePath = 'reports/' . $fileName;
+        $fileName = 'carbon-report-' . $this->reportJob->id . '-' . now()->format('Ymd_His') . '.' . $format;
+        $filePath = 'reports/' . $fileName;
 
-            Excel::store(
-                new CarbonReportExport($filters, $allowedProjectIds),
-                $filePath,
-                'local',
-                $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
-            );
+        // Error dibiarkan naik supaya queue bisa retry ($tries); status 'failed' diset di failed()
+        Excel::store(
+            new CarbonReportExport($filters, $allowedProjectIds),
+            $filePath,
+            'local',
+            $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
+        );
 
-            $this->reportJob->update([
-                'status'       => 'done',
-                'file_path'    => $filePath,
-                'file_name'    => $fileName,
-                'completed_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            $this->reportJob->update([
-                'status'        => 'failed',
-                'error_message' => $e->getMessage(),
-                'completed_at'  => now(),
-            ]);
-        }
+        $this->reportJob->update([
+            'status'       => 'done',
+            'file_path'    => $filePath,
+            'file_name'    => $fileName,
+            'completed_at' => now(),
+        ]);
+    }
+
+    public function failed(?Throwable $e): void
+    {
+        // Detail error sudah tercatat di log / failed_jobs; jangan bocorkan ke user
+        $this->reportJob->update([
+            'status'        => 'failed',
+            'error_message' => 'Gagal membuat laporan. Silakan coba lagi atau hubungi administrator.',
+            'completed_at'  => now(),
+        ]);
     }
 }
