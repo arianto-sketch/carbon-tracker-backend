@@ -157,7 +157,7 @@ class CarbonEntryController extends Controller
         $this->authorizeProjectWrite($request, $project);
 
         $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
-        $entry = $this->service->submit($entry);
+        $entry = $this->service->submit($entry, $request->user());
 
         return response()->json([
             'data'    => new CarbonEntryResource($entry),
