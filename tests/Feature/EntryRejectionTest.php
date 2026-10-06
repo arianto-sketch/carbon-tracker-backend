@@ -102,6 +102,44 @@ class EntryRejectionTest extends TestCase
             ->assertJsonPath('data.rejection_reason', null);
     }
 
+    public function test_reviewer_who_last_edited_the_entry_cannot_approve_or_reject_it(): void
+    {
+        $this->reject($this->owner)->assertOk();
+        $base = "/api/v1/projects/{$this->project->id}/entries/{$this->entry->id}";
+
+        // Owner mengganti angka milik anggota lalu men-submit-nya sendiri
+        $this->actingAs($this->owner, 'sanctum')->putJson($base, [
+            'emission_factor_id' => $this->gasolineFactor()->id,
+            'quantity' => 1,
+            'entry_date' => '2026-03-15',
+        ])->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->postJson("{$base}/submit")->assertOk();
+
+        $this->actingAs($this->owner, 'sanctum')->postJson("{$base}/approve")->assertForbidden();
+        $this->reject($this->owner)->assertForbidden();
+        $this->assertSame('submitted', $this->entry->fresh()->status);
+
+        // Reviewer lain (admin) tetap bisa
+        $this->actingAs($this->admin, 'sanctum')->postJson("{$base}/approve")->assertOk();
+    }
+
+    public function test_owner_can_approve_after_member_fixes_rejected_entry(): void
+    {
+        $this->reject($this->owner)->assertOk();
+        $base = "/api/v1/projects/{$this->project->id}/entries/{$this->entry->id}";
+
+        $this->actingAs($this->member, 'sanctum')->putJson($base, [
+            'emission_factor_id' => $this->gasolineFactor()->id,
+            'quantity' => 50,
+            'entry_date' => '2026-03-15',
+        ])->assertOk();
+        $this->actingAs($this->member, 'sanctum')->postJson("{$base}/submit")->assertOk();
+
+        $this->actingAs($this->owner, 'sanctum')->postJson("{$base}/approve")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'approved');
+    }
+
     public function test_rejected_entries_are_not_counted_in_target_progress(): void
     {
         $this->reject($this->owner)->assertOk();

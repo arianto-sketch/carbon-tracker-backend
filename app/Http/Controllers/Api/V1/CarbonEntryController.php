@@ -156,7 +156,7 @@ class CarbonEntryController extends Controller
     }
 
     /**
-     * Approve/tolak: owner project atau admin, dan bukan pembuat entri (prinsip 4-eyes).
+     * Approve/tolak: owner project atau admin, dan bukan pembuat maupun pengubah terakhir entri (prinsip 4-eyes).
      */
     private function authorizeReview(Request $request, Project $project, CarbonEntry $entry): void
     {
@@ -168,6 +168,11 @@ class CarbonEntryController extends Controller
 
         if ((int) $entry->created_by === (int) $user->id) {
             abort(403, 'Tidak bisa me-review entri buatan sendiri.');
+        }
+
+        // updated_by = pengubah isi terakhir (submit/approve/reject tidak mengubahnya)
+        if ($entry->updated_by !== null && (int) $entry->updated_by === (int) $user->id) {
+            abort(403, 'Tidak bisa me-review entri yang isinya terakhir Anda ubah.');
         }
     }
 
