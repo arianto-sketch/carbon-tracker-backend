@@ -10,9 +10,10 @@ use Illuminate\Validation\ValidationException;
 
 class ProjectService
 {
-    public function list(User $user, int $perPage = 15): LengthAwarePaginator
+    public function list(User $user, int $perPage = 15, ?string $search = null): LengthAwarePaginator
     {
-        $query = Project::with('createdBy');
+        $query = Project::with('createdBy')
+            ->when($search, fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%")));
 
         if (! $user->isAdmin()) {
             $query->whereHas('projectMembers', fn ($q) => $q->where('user_id', $user->id));

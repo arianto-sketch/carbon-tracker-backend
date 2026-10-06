@@ -25,7 +25,8 @@ class CarbonEntryController extends Controller
 
         $entries = $this->service->list(
             $project,
-            $request->only(['category_id', 'period_year', 'period_month', 'status'])
+            $request->only(['category_id', 'period_year', 'period_month', 'status']),
+            $this->perPage($request, 20)
         );
 
         return response()->json([
