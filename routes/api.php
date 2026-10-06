@@ -65,6 +65,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [CarbonEntryController::class, 'destroy']);
             Route::post('/{id}/submit', [CarbonEntryController::class, 'submit']);
             Route::post('/{id}/approve', [CarbonEntryController::class, 'approve']);
+            Route::post('/{id}/reject', [CarbonEntryController::class, 'reject']);
         });
 
         // Carbon Targets

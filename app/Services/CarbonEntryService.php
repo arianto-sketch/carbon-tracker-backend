@@ -14,7 +14,7 @@ class CarbonEntryService
 {
     public function list(Project $project, array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
-        $query = CarbonEntry::with(['emissionFactor', 'category', 'createdBy', 'approvedBy'])
+        $query = CarbonEntry::with(['emissionFactor', 'category', 'createdBy', 'approvedBy', 'rejectedBy'])
             ->where('project_id', $project->id);
 
         if (isset($filters['category_id'])) {
@@ -66,9 +66,9 @@ class CarbonEntryService
 
     public function update(CarbonEntry $entry, array $data, User $updater): CarbonEntry
     {
-        if (! $entry->isDraft()) {
+        if (! $entry->isEditable()) {
             throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus draft yang bisa diubah.'],
+                'status' => ['Hanya entry berstatus draft atau ditolak yang bisa diubah.'],
             ]);
         }
 
@@ -100,9 +100,9 @@ class CarbonEntryService
 
     public function delete(CarbonEntry $entry): void
     {
-        if (! $entry->isDraft()) {
+        if (! $entry->isEditable()) {
             throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus draft yang bisa dihapus.'],
+                'status' => ['Hanya entry berstatus draft atau ditolak yang bisa dihapus.'],
             ]);
         }
 
@@ -111,13 +111,19 @@ class CarbonEntryService
 
     public function submit(CarbonEntry $entry): CarbonEntry
     {
-        if (! $entry->isDraft()) {
+        if (! $entry->isEditable()) {
             throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus draft yang bisa di-submit.'],
+                'status' => ['Hanya entry berstatus draft atau ditolak yang bisa di-submit.'],
             ]);
         }
 
-        $entry->update(['status' => 'submitted']);
+        // Submit ulang setelah ditolak: bersihkan data penolakan sebelumnya
+        $entry->update([
+            'status'           => 'submitted',
+            'rejection_reason' => null,
+            'rejected_by'      => null,
+            'rejected_at'      => null,
+        ]);
 
         return $entry->fresh();
     }
@@ -137,6 +143,24 @@ class CarbonEntryService
         ]);
 
         return $entry->fresh(['approvedBy']);
+    }
+
+    public function reject(CarbonEntry $entry, User $reviewer, string $reason): CarbonEntry
+    {
+        if ($entry->status !== 'submitted') {
+            throw ValidationException::withMessages([
+                'status' => ['Hanya entry berstatus submitted yang bisa ditolak.'],
+            ]);
+        }
+
+        $entry->update([
+            'status'           => 'rejected',
+            'rejection_reason' => $reason,
+            'rejected_by'      => $reviewer->id,
+            'rejected_at'      => now(),
+        ]);
+
+        return $entry->fresh(['rejectedBy']);
     }
 
     public function bulkCreate(array $items, Project $project, User $creator): array

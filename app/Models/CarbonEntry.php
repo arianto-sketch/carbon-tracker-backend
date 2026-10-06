@@ -27,6 +27,9 @@ class CarbonEntry extends Model
         'status',
         'approved_by',
         'approved_at',
+        'rejection_reason',
+        'rejected_by',
+        'rejected_at',
         'created_by',
         'updated_by',
     ];
@@ -36,6 +39,7 @@ class CarbonEntry extends Model
         return [
             'entry_date' => 'date',
             'approved_at' => 'datetime',
+            'rejected_at' => 'datetime',
             'quantity' => 'decimal:4',
             'emission_factor_value' => 'decimal:8',
             'co2e_kg' => 'decimal:4',
@@ -67,9 +71,20 @@ class CarbonEntry extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function rejectedBy()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+
     public function isDraft(): bool
     {
         return $this->status === 'draft';
+    }
+
+    /** Draft atau ditolak: masih boleh diubah, dihapus, dan di-submit (ulang). */
+    public function isEditable(): bool
+    {
+        return in_array($this->status, ['draft', 'rejected'], true);
     }
 
     public function isApproved(): bool
