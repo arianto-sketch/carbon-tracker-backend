@@ -68,7 +68,7 @@ class ReportController extends Controller
 
     public function history(Request $request): JsonResponse
     {
-        $jobs = $this->service->getHistory($request->user());
+        $jobs = $this->service->getHistory($request->user(), $this->perPage($request, 15));
 
         return response()->json([
             'data' => $jobs->map(fn ($job) => [

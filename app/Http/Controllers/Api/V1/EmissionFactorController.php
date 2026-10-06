@@ -17,7 +17,7 @@ class EmissionFactorController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $factors = $this->service->list($request->only(['category_id', 'search', 'is_active']));
+        $factors = $this->service->list($request->only(['category_id', 'search', 'is_active']), $this->perPage($request, 20));
 
         return response()->json([
             'data' => EmissionFactorResource::collection($factors->items()),

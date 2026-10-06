@@ -19,7 +19,8 @@ class ProjectController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $projects = $this->projectService->list($request->user());
+        $search = $request->validate(['search' => ['nullable', 'string', 'max:100']])['search'] ?? null;
+        $projects = $this->projectService->list($request->user(), $this->perPage($request, 15), $search);
 
         return response()->json([
             'data' => ProjectResource::collection($projects->items()),
