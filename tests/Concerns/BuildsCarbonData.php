@@ -39,6 +39,19 @@ trait BuildsCarbonData
         return $project;
     }
 
+    protected function addMember(Project $project, User $user, string $role = 'member'): void
+    {
+        ProjectMember::create(['project_id' => $project->id, 'user_id' => $user->id, 'role' => $role]);
+    }
+
+    protected function makeEntry(Project $project, User $creator, string $status = 'draft'): CarbonEntry
+    {
+        $entry = $this->makeApprovedEntry($project, $creator);
+        $entry->update(['status' => $status, 'approved_by' => null, 'approved_at' => null]);
+
+        return $entry->fresh();
+    }
+
     protected function makeApprovedEntry(Project $project, User $creator, float $quantity = 100, string $date = '2026-03-15'): CarbonEntry
     {
         $factor = $this->gasolineFactor();
