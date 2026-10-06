@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\CarbonTargetController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -23,6 +24,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::put('/auth/me', [AuthController::class, 'updateMe']);
         Route::put('/auth/me/password', [AuthController::class, 'changePassword']);
+
+        // Notifikasi in-app milik user yang login
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [NotificationController::class, 'index']);
+            Route::post('/read-all', [NotificationController::class, 'readAll']);
+            Route::post('/{id}/read', [NotificationController::class, 'read']);
+        });
 
         // Manajemen user (admin)
         Route::prefix('users')->middleware('admin')->group(function () {

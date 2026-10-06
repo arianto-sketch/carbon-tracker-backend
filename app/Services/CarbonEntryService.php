@@ -6,10 +6,13 @@ use App\Models\AuditLog;
 use App\Models\CarbonEntry;
 use App\Models\EmissionFactor;
 use App\Models\Project;
+use App\Models\ProjectMember;
+use App\Notifications\EntryWorkflowNotification;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
@@ -210,7 +213,7 @@ class CarbonEntryService
         $entry->delete();
     }
 
-    public function submit(CarbonEntry $entry): CarbonEntry
+    public function submit(CarbonEntry $entry, ?User $submitter = null): CarbonEntry
     {
         if (! $entry->isEditable()) {
             throw ValidationException::withMessages([
@@ -225,6 +228,10 @@ class CarbonEntryService
             'rejected_by'      => null,
             'rejected_at'      => null,
         ]);
+
+        if ($submitter) {
+            $this->notifyOwners($entry, $submitter);
+        }
 
         return $entry->fresh();
     }
@@ -242,6 +249,8 @@ class CarbonEntryService
             'approved_by' => $approver->id,
             'approved_at' => now(),
         ]);
+
+        $this->notifyCreator($entry, new EntryWorkflowNotification('entry_approved', $entry, $approver));
 
         return $entry->fresh(['approvedBy']);
     }
@@ -261,7 +270,38 @@ class CarbonEntryService
             'rejected_at'      => now(),
         ]);
 
+        $this->notifyCreator($entry, new EntryWorkflowNotification('entry_rejected', $entry, $reviewer, $reason));
+
         return $entry->fresh(['rejectedBy']);
+    }
+
+    /** Owner project diberi tahu ada entri menunggu approval (kecuali pengirimnya sendiri). */
+    private function notifyOwners(CarbonEntry $entry, User $submitter): void
+    {
+        $ownerIds = ProjectMember::where('project_id', $entry->project_id)->where('role', 'owner')->pluck('user_id');
+        $owners = User::whereIn('id', $ownerIds)->whereKeyNot($submitter->id)->where('is_active', true)->get();
+
+        $this->sendSafely($owners, new EntryWorkflowNotification('entry_submitted', $entry, $submitter));
+    }
+
+    private function notifyCreator(CarbonEntry $entry, EntryWorkflowNotification $notification): void
+    {
+        if ($entry->createdBy) {
+            $this->sendSafely([$entry->createdBy], $notification);
+        }
+    }
+
+    /**
+     * Notifikasi bersifat best-effort: kegagalan dicatat di log tanpa membatalkan
+     * perubahan status yang sudah tersimpan.
+     */
+    private function sendSafely(iterable $users, EntryWorkflowNotification $notification): void
+    {
+        try {
+            Notification::send($users, $notification);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     public function bulkCreate(array $items, Project $project, User $creator): array
