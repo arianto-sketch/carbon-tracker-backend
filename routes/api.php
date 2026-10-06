@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -22,6 +23,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::put('/auth/me', [AuthController::class, 'updateMe']);
         Route::put('/auth/me/password', [AuthController::class, 'changePassword']);
+
+        // Manajemen user (admin)
+        Route::prefix('users')->middleware('admin')->group(function () {
+            Route::get('/', [UserController::class, 'index']);
+            Route::post('/', [UserController::class, 'store']);
+            Route::put('/{id}', [UserController::class, 'update']);
+        });
 
         // Emission Categories (read-only, semua user)
         Route::get('/emission-categories', [EmissionCategoryController::class, 'index']);
