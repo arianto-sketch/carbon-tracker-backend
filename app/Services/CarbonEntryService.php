@@ -2,16 +2,24 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\CarbonEntry;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
 class CarbonEntryService
 {
+    /** Field teknis yang tidak ditampilkan di riwayat perubahan. */
+    private const HISTORY_HIDDEN_FIELDS = ['updated_at', 'updated_by', 'created_at', 'approved_by', 'approved_at', 'rejected_by', 'rejected_at'];
+
+    /** Perubahan status yang ditampilkan sebagai event tersendiri. */
+    private const STATUS_EVENTS = ['submitted', 'approved', 'rejected'];
+
     public function list(Project $project, array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
         $query = CarbonEntry::with(['emissionFactor', 'category', 'createdBy', 'approvedBy', 'rejectedBy'])
@@ -34,6 +42,39 @@ class CarbonEntryService
         }
 
         return $query->orderByDesc('entry_date')->paginate($perPage);
+    }
+
+    /**
+     * Riwayat perubahan entri dari audit_logs (ditulis CarbonEntryObserver), urut kronologis.
+     */
+    public function history(CarbonEntry $entry): array
+    {
+        return AuditLog::with('user')
+            ->where('model_type', CarbonEntry::class)
+            ->where('model_id', $entry->id)
+            ->orderBy('id')
+            ->get()
+            ->map(function (AuditLog $log) {
+                $changes = [];
+
+                if ($log->action === 'updated') {
+                    foreach (Arr::except($log->new_values ?? [], self::HISTORY_HIDDEN_FIELDS) as $field => $new) {
+                        $changes[$field] = ['old' => $log->old_values[$field] ?? null, 'new' => $new];
+                    }
+                }
+
+                $newStatus = $changes['status']['new'] ?? null;
+
+                return [
+                    'id'         => $log->id,
+                    'action'     => $log->action,
+                    'event'      => in_array($newStatus, self::STATUS_EVENTS, true) ? $newStatus : $log->action,
+                    'user'       => $log->user ? ['id' => $log->user->id, 'name' => $log->user->name] : null,
+                    'changes'    => (object) $changes,
+                    'created_at' => $log->created_at?->toISOString(),
+                ];
+            })
+            ->all();
     }
 
     public function create(array $data, Project $project, User $creator): CarbonEntry

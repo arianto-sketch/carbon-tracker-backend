@@ -63,6 +63,16 @@ class CarbonEntryController extends Controller
         return response()->json(['data' => new CarbonEntryResource($entry)]);
     }
 
+    public function history(Request $request, int $projectId, int $id): JsonResponse
+    {
+        $project = Project::findOrFail($projectId);
+        $this->authorizeProjectAccess($request, $project);
+
+        $entry = CarbonEntry::where('project_id', $projectId)->findOrFail($id);
+
+        return response()->json(['data' => $this->service->history($entry)]);
+    }
+
     public function update(UpdateCarbonEntryRequest $request, int $projectId, int $id): JsonResponse
     {
         $project = Project::findOrFail($projectId);
