@@ -6,6 +6,7 @@ use App\Models\CarbonEntry;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Tests\Concerns\BuildsCarbonData;
 use Tests\TestCase;
 
@@ -114,6 +115,21 @@ class ApprovalNotificationTest extends TestCase
 
         $this->actingAs($this->owner, 'sanctum')->postJson('/api/v1/notifications/read-all')->assertOk();
         $this->assertSame(0, $this->owner->unreadNotifications()->count());
+    }
+
+    public function test_notification_failure_does_not_break_the_workflow(): void
+    {
+        Notification::shouldReceive('send')->andThrow(new \RuntimeException('notifications table unavailable'));
+        $entry = $this->makeEntry($this->project, $this->member);
+
+        $this->actingAs($this->member, 'sanctum')->postJson($this->entryUrl($entry, 'submit'))
+            ->assertOk()->assertJsonPath('data.status', 'submitted');
+        $this->actingAs($this->owner, 'sanctum')->postJson($this->entryUrl($entry, 'approve'))
+            ->assertOk()->assertJsonPath('data.status', 'approved');
+
+        $rejectable = $this->makeEntry($this->project, $this->member, 'submitted');
+        $this->actingAs($this->owner, 'sanctum')->postJson($this->entryUrl($rejectable, 'reject'), ['reason' => 'x'])
+            ->assertOk()->assertJsonPath('data.status', 'rejected');
     }
 
     public function test_cannot_mark_another_users_notification(): void

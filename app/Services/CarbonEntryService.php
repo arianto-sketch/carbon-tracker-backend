@@ -281,12 +281,27 @@ class CarbonEntryService
         $ownerIds = ProjectMember::where('project_id', $entry->project_id)->where('role', 'owner')->pluck('user_id');
         $owners = User::whereIn('id', $ownerIds)->whereKeyNot($submitter->id)->where('is_active', true)->get();
 
-        Notification::send($owners, new EntryWorkflowNotification('entry_submitted', $entry, $submitter));
+        $this->sendSafely($owners, new EntryWorkflowNotification('entry_submitted', $entry, $submitter));
     }
 
     private function notifyCreator(CarbonEntry $entry, EntryWorkflowNotification $notification): void
     {
-        $entry->createdBy?->notify($notification);
+        if ($entry->createdBy) {
+            $this->sendSafely([$entry->createdBy], $notification);
+        }
+    }
+
+    /**
+     * Notifikasi bersifat best-effort: kegagalan dicatat di log tanpa membatalkan
+     * perubahan status yang sudah tersimpan.
+     */
+    private function sendSafely(iterable $users, EntryWorkflowNotification $notification): void
+    {
+        try {
+            Notification::send($users, $notification);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     public function bulkCreate(array $items, Project $project, User $creator): array
