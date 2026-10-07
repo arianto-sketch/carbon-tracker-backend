@@ -9,6 +9,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\Concerns\BuildsCarbonData;
 use Tests\TestCase;
 
@@ -57,6 +59,24 @@ class EntryImportTest extends TestCase
         @unlink($path);
 
         $this->assertSame(['tanggal', 'kode_faktor', 'jumlah', 'keterangan', 'vendor', 'tipe_aktivitas'], $headings);
+    }
+
+    public function test_template_writes_formula_like_factor_names_as_text(): void
+    {
+        $name = '=HYPERLINK("http://evil.test","Klik")';
+        $this->gasolineFactor()->update(['name' => $name]);
+
+        $response = $this->actingAs($this->owner, 'sanctum')->get("{$this->base()}/template")->assertOk();
+        $path = tempnam(sys_get_temp_dir(), 'tpl').'.xlsx';
+        file_put_contents($path, $response->streamedContent());
+        $sheet = IOFactory::load($path)->getSheetByName('Kode Faktor');
+        @unlink($path);
+
+        $cell = collect($sheet->getColumnIterator('B')->current()->getCellIterator())
+            ->first(fn ($cell) => $cell->getValue() === $name);
+
+        $this->assertNotNull($cell, 'Nama faktor harus tetap utuh di template');
+        $this->assertSame(DataType::TYPE_STRING, $cell->getDataType());
     }
 
     public function test_preview_reports_errors_per_row_and_computes_emission(): void

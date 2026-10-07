@@ -6,6 +6,7 @@ use App\Models\CarbonEntry;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\CarbonEntryService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -66,6 +67,19 @@ class ConcurrentEntryActionsTest extends TestCase
         $fresh = $entry->fresh();
         $this->assertSame('approved', $fresh->status);
         $this->assertNull($fresh->rejection_reason);
+    }
+
+    public function test_review_rechecks_four_eyes_rule_on_the_locked_row(): void
+    {
+        // Request review membaca entri sebelum owner mengubah isinya lalu submit ulang
+        $entry = $this->makeEntry($this->project, $this->member, 'submitted');
+        $stale = $entry->fresh();
+        CarbonEntry::whereKey($entry->id)->update(['updated_by' => $this->owner->id]);
+
+        $this->assertThrows(fn () => $this->service->approve($stale, $this->owner), AuthorizationException::class);
+        $this->assertThrows(fn () => $this->service->reject($stale, $this->owner, 'Tolak.'), AuthorizationException::class);
+
+        $this->assertSame('submitted', $entry->fresh()->status);
     }
 
     public function test_submit_cannot_revert_an_entry_approved_meanwhile(): void
