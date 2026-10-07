@@ -6,6 +6,7 @@ use App\Imports\CarbonEntryImport;
 use App\Models\EmissionFactor;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithTitle;
 
@@ -17,7 +18,7 @@ class CarbonEntryImportTemplate implements WithMultipleSheets
     public function sheets(): array
     {
         return [
-            new class implements FromArray, WithTitle, ShouldAutoSize
+            new class extends FormulaSafeValueBinder implements FromArray, WithTitle, ShouldAutoSize, WithCustomValueBinder
             {
                 public function array(): array
                 {
@@ -29,7 +30,8 @@ class CarbonEntryImportTemplate implements WithMultipleSheets
                     return 'Entri';
                 }
             },
-            new class implements FromArray, WithTitle, ShouldAutoSize
+            // Nama faktor/kategori/satuan diisi admin: tetap dinetralkan agar tidak jadi formula
+            new class extends FormulaSafeValueBinder implements FromArray, WithTitle, ShouldAutoSize, WithCustomValueBinder
             {
                 public function array(): array
                 {

@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Notifications\EntryWorkflowNotification;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
@@ -275,6 +276,7 @@ class CarbonEntryService
         $entry = DB::transaction(function () use ($entry, $approver) {
             $entry = $this->lockForChange($entry);
             $this->ensureSubmitted($entry, 'Hanya entry berstatus submitted yang bisa di-approve.');
+            $this->ensureReviewableBy($entry, $approver);
 
             $entry->update([
                 'status'      => 'approved',
@@ -295,6 +297,7 @@ class CarbonEntryService
         $entry = DB::transaction(function () use ($entry, $reviewer, $reason) {
             $entry = $this->lockForChange($entry);
             $this->ensureSubmitted($entry, 'Hanya entry berstatus submitted yang bisa ditolak.');
+            $this->ensureReviewableBy($entry, $reviewer);
 
             $entry->update([
                 'status'           => 'rejected',
@@ -315,6 +318,17 @@ class CarbonEntryService
     {
         if ($entry->status !== 'submitted') {
             throw ValidationException::withMessages(['status' => [$message]]);
+        }
+    }
+
+    /**
+     * Aturan 4 mata dicek ulang pada baris terkunci: controller membaca entri sebelum lock, jadi
+     * reviewer yang mengubah isi entri lalu submit di request paralel bisa lolos pengecekan awal.
+     */
+    private function ensureReviewableBy(CarbonEntry $entry, User $reviewer): void
+    {
+        if ($reason = $entry->reviewBlockedReason($reviewer)) {
+            throw new AuthorizationException($reason);
         }
     }
 

@@ -10,12 +10,9 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use Maatwebsite\Excel\DefaultValueBinder;
-use PhpOffice\PhpSpreadsheet\Cell\Cell;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class CarbonReportExport extends DefaultValueBinder implements FromQuery, WithHeadings, WithMapping, WithTitle, ShouldAutoSize, WithStyles, WithCustomValueBinder
+class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, WithHeadings, WithMapping, WithTitle, ShouldAutoSize, WithStyles, WithCustomValueBinder
 {
     /** Karakter awal yang membuat teks dibaca sebagai formula oleh Excel/LibreOffice (OWASP). */
     private const FORMULA_TRIGGERS = ['=', '+', '-', '@', "\t", "\r"];
@@ -105,7 +102,7 @@ class CarbonReportExport extends DefaultValueBinder implements FromQuery, WithHe
 
     /**
      * CSV tidak punya tipe sel, jadi teks yang diawali karakter formula diberi awalan '.
-     * XLSX dibiarkan utuh; pengamanannya lewat bindValue().
+     * XLSX dibiarkan utuh; pengamanannya lewat FormulaSafeValueBinder.
      */
     private function text(?string $value): ?string
     {
@@ -114,18 +111,6 @@ class CarbonReportExport extends DefaultValueBinder implements FromQuery, WithHe
         }
 
         return $value;
-    }
-
-    /** XLSX: teks berawalan "=" ditulis sebagai sel teks, bukan formula. Angka tetap numerik. */
-    public function bindValue(Cell $cell, $value)
-    {
-        if (is_string($value) && str_starts_with($value, '=')) {
-            $cell->setValueExplicit($value, DataType::TYPE_STRING);
-
-            return true;
-        }
-
-        return parent::bindValue($cell, $value);
     }
 
     public function title(): string
