@@ -126,6 +126,23 @@ class EntryAttachmentTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk.pdf');
     }
 
+    public function test_frontend_on_another_origin_can_read_download_filename(): void
+    {
+        // Tanpa expose, browser menyembunyikan Content-Disposition dari axios dan frontend
+        // jatuh ke attachment_name, yang ekstensinya berasal dari pengunggah
+        $this->upload($this->member, $this->pdf('struk.bat'))->assertOk();
+
+        $response = $this->actingAs($this->owner, 'sanctum')
+            ->withHeaders(['Origin' => 'http://localhost:5173'])
+            ->get($this->url())
+            ->assertOk();
+
+        $this->assertStringContainsStringIgnoringCase(
+            'Content-Disposition',
+            (string) $response->headers->get('Access-Control-Expose-Headers'),
+        );
+    }
+
     public function test_download_without_attachment_is_not_found(): void
     {
         $this->actingAs($this->member, 'sanctum')->getJson($this->url())
