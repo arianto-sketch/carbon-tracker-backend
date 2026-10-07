@@ -34,21 +34,25 @@ class DashboardService
             $projectQuery->whereHas('projectMembers', fn ($q) => $q->where('user_id', $user->id));
         }
 
-        $projects = $projectQuery->with('createdBy')->get();
-
-        return $projects->map(function (Project $project) use ($filters) {
-            $query = CarbonEntry::where('project_id', $project->id)->where('status', 'approved');
+        // Total dan jumlah entri dihitung di query yang sama (subquery), bukan 2 query per project
+        $approved = function ($query) use ($filters) {
+            $query->where('status', 'approved');
             $this->applyFilters($query, $filters);
+        };
 
-            return [
-                'id'            => $project->id,
-                'name'          => $project->name,
-                'code'          => $project->code,
-                'status'        => $project->status,
-                'total_co2e_kg' => (float) $query->sum('co2e_kg'),
-                'entry_count'   => $query->count(),
-            ];
-        })->sortByDesc('total_co2e_kg')->values()->toArray();
+        $projects = $projectQuery
+            ->withSum(['carbonEntries as total_co2e_kg' => $approved], 'co2e_kg')
+            ->withCount(['carbonEntries as entry_count' => $approved])
+            ->get();
+
+        return $projects->map(fn (Project $project) => [
+            'id'            => $project->id,
+            'name'          => $project->name,
+            'code'          => $project->code,
+            'status'        => $project->status,
+            'total_co2e_kg' => (float) $project->total_co2e_kg,
+            'entry_count'   => (int) $project->entry_count,
+        ])->sortByDesc('total_co2e_kg')->values()->toArray();
     }
 
     public function getTrend(User $user, array $filters = []): array
@@ -130,7 +134,12 @@ class DashboardService
         if (! $user->isAdmin()) {
             $projectIds = $user->projects()->pluck('projects.id');
             $query->whereIn('project_id', $projectIds);
+
+            return;
         }
+
+        // Admin: semua project, kecuali yang sudah dihapus (soft delete)
+        $query->whereIn('project_id', Project::query()->select('id'));
     }
 
     private function applyFilters($query, array $filters): void

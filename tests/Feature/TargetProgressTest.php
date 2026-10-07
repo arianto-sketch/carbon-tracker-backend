@@ -99,7 +99,8 @@ class TargetProgressTest extends TestCase
     public function test_progress_uses_a_constant_number_of_queries(): void
     {
         $this->entry('gasoline_vehicle', 100, '2026-01-10');
-        $this->target('yearly', 2026);
+        // Berkategori, supaya eager-load kategori sudah ikut terhitung di pengukuran pertama
+        $this->target('yearly', 2026, null, 'gasoline_vehicle');
 
         $count = function () {
             DB::flushQueryLog();

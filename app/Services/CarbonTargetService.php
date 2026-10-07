@@ -92,8 +92,10 @@ class CarbonTargetService
             ->where('project_id', $project->id)
             ->get();
 
-        return $targets->map(function (CarbonTarget $target) use ($project) {
-            $actual = $this->getActualForTarget($target, $project);
+        $totals = $this->approvedTotalsByMonth($project, $targets->pluck('period_year')->unique()->values()->all());
+
+        return $targets->map(function (CarbonTarget $target) use ($totals) {
+            $actual = $this->getActualForTarget($target, $totals);
 
             $percentage = $target->target_co2e_kg > 0
                 ? round(($actual / $target->target_co2e_kg) * 100, 2)
@@ -142,26 +144,42 @@ class CarbonTargetService
         }
     }
 
-    private function getActualForTarget(CarbonTarget $target, Project $project): float
+    /**
+     * Total emisi approved project per kategori + tahun + bulan dalam satu query, supaya
+     * progress semua target dihitung tanpa 1 query SUM per target.
+     *
+     * @param  array<int>  $years
+     */
+    private function approvedTotalsByMonth(Project $project, array $years): Collection
     {
-        $query = CarbonEntry::where('project_id', $project->id)
+        if ($years === []) {
+            return collect();
+        }
+
+        return CarbonEntry::where('project_id', $project->id)
             ->where('status', 'approved')
-            ->where('period_year', $target->period_year);
+            ->whereIn('period_year', $years)
+            ->selectRaw('category_id, period_year, period_month, SUM(co2e_kg) as total_co2e_kg')
+            ->groupBy('category_id', 'period_year', 'period_month')
+            ->toBase()
+            ->get();
+    }
 
-        if ($target->category_id) {
-            $query->where('category_id', $target->category_id);
-        }
+    private function getActualForTarget(CarbonTarget $target, Collection $totals): float
+    {
+        [$fromMonth, $toMonth] = match (true) {
+            $target->period_type === 'monthly' && $target->period_value => [$target->period_value, $target->period_value],
+            $target->period_type === 'quarterly' && $target->period_value => [($target->period_value - 1) * 3 + 1, $target->period_value * 3],
+            default => [1, 12],
+        };
 
-        if ($target->period_type === 'monthly' && $target->period_value) {
-            $query->where('period_month', $target->period_value);
-        }
+        $sum = $totals
+            ->filter(fn ($row) => (int) $row->period_year === (int) $target->period_year
+                && (! $target->category_id || (int) $row->category_id === (int) $target->category_id)
+                && $row->period_month >= $fromMonth && $row->period_month <= $toMonth)
+            ->sum(fn ($row) => (float) $row->total_co2e_kg);
 
-        if ($target->period_type === 'quarterly' && $target->period_value) {
-            $startMonth = ($target->period_value - 1) * 3 + 1;
-            $endMonth = $startMonth + 2;
-            $query->whereBetween('period_month', [$startMonth, $endMonth]);
-        }
-
-        return (float) $query->sum('co2e_kg');
+        // Dijumlah di PHP: dibulatkan ke presisi kolom co2e_kg (4 desimal) agar sama dengan SUM di database
+        return round($sum, 4);
     }
 }

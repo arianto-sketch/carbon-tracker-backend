@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -15,9 +16,7 @@ class UserService
     public function list(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         return User::query()
-            ->when($filters['search'] ?? null, function ($query, $search) {
-                $query->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"));
-            })
+            ->when($filters['search'] ?? null, fn ($query, $search) => Like::anyContains($query, ['name', 'email'], $search))
             ->when($filters['role'] ?? null, fn ($query, $role) => $query->where('role', $role))
             ->orderBy('name')
             ->paginate($perPage);

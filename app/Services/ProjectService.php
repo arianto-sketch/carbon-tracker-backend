@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
+use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -14,7 +15,7 @@ class ProjectService
     public function list(User $user, int $perPage = 15, ?string $search = null): LengthAwarePaginator
     {
         $query = Project::with('createdBy')
-            ->when($search, fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%")));
+            ->when($search, fn ($q) => Like::anyContains($q, ['name', 'code'], $search));
 
         if (! $user->isAdmin()) {
             $query->whereHas('projectMembers', fn ($q) => $q->where('user_id', $user->id));

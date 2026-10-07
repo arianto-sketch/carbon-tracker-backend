@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\CheckAdminRole;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\SetSecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -24,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // API-only: tidak ada route "login", jadi guest tidak di-redirect (hasilnya 401 JSON, bukan 500)
         $middleware->redirectGuestsTo(fn () => null);
+
+        $middleware->append(SetSecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

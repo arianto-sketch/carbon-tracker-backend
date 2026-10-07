@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\CarbonEntry;
 
+use App\Http\Controllers\Concerns\AuthorizesProjectEntries;
+use App\Models\Project;
 use App\Services\CarbonEntryImportService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -11,9 +13,17 @@ use Illuminate\Validation\Rule;
  */
 class ImportCarbonEntriesRequest extends FormRequest
 {
+    use AuthorizesProjectEntries;
+
+    /**
+     * Akses dicek sebelum aturan validasi dijalankan: tanpa ini non-member bisa memicu
+     * sampai MAX_ROWS query `exists` per request sebelum akhirnya ditolak.
+     */
     public function authorize(): bool
     {
-        return true; // akses project dicek di controller
+        $this->authorizeProjectWrite($this, Project::findOrFail($this->route('projectId')));
+
+        return true;
     }
 
     public function rules(): array

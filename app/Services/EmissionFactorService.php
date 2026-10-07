@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\EmissionFactor;
 use App\Models\User;
+use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class EmissionFactorService
@@ -16,8 +17,8 @@ class EmissionFactorService
             $query->where('category_id', $filters['category_id']);
         }
 
-        if (isset($filters['search'])) {
-            $query->where('name', 'like', '%' . $filters['search'] . '%');
+        if (isset($filters['search']) && is_string($filters['search'])) {
+            Like::anyContains($query, ['name'], $filters['search']);
         }
 
         if (isset($filters['is_active'])) {
