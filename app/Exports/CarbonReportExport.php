@@ -5,18 +5,27 @@ namespace App\Exports;
 use App\Models\CarbonEntry;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class CarbonReportExport implements FromQuery, WithHeadings, WithMapping, WithTitle, ShouldAutoSize, WithStyles
+class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, WithHeadings, WithMapping, WithTitle, ShouldAutoSize, WithStyles, WithCustomValueBinder
 {
+    /** Karakter awal yang membuat teks dibaca sebagai formula oleh Excel/LibreOffice (OWASP). */
+    private const FORMULA_TRIGGERS = ['=', '+', '-', '@', "\t", "\r"];
+
     /**
      * @param  array<int>|null  $allowedProjectIds  null = semua project (admin)
+     * @param  string  $format  xlsx / csv — menentukan cara menetralkan teks berawalan formula
      */
-    public function __construct(private array $filters, private ?array $allowedProjectIds = null) {}
+    public function __construct(
+        private array $filters,
+        private ?array $allowedProjectIds = null,
+        private string $format = 'xlsx',
+    ) {}
 
     public function query()
     {
@@ -75,20 +84,33 @@ class CarbonReportExport implements FromQuery, WithHeadings, WithMapping, WithTi
     {
         return [
             $entry->id,
-            $entry->project?->name,
-            $entry->category?->name,
-            $entry->emissionFactor?->name,
+            $this->text($entry->project?->name),
+            $this->text($entry->category?->name),
+            $this->text($entry->emissionFactor?->name),
             $entry->entry_date?->format('d/m/Y'),
             $entry->period_month . '/' . $entry->period_year,
             $entry->quantity,
-            $entry->source_unit,
+            $this->text($entry->source_unit),
             $entry->emission_factor_value,
             $entry->co2e_kg,
-            $entry->description,
-            $entry->vendor_name,
-            $entry->activity_type,
-            $entry->createdBy?->name,
+            $this->text($entry->description),
+            $this->text($entry->vendor_name),
+            $this->text($entry->activity_type),
+            $this->text($entry->createdBy?->name),
         ];
+    }
+
+    /**
+     * CSV tidak punya tipe sel, jadi teks yang diawali karakter formula diberi awalan '.
+     * XLSX dibiarkan utuh; pengamanannya lewat FormulaSafeValueBinder.
+     */
+    private function text(?string $value): ?string
+    {
+        if ($this->format === 'csv' && $value !== null && $value !== '' && in_array($value[0], self::FORMULA_TRIGGERS, true)) {
+            return "'".$value;
+        }
+
+        return $value;
     }
 
     public function title(): string

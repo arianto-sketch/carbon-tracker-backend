@@ -92,4 +92,37 @@ class CarbonEntry extends Model
     {
         return $this->status === 'approved';
     }
+
+    /**
+     * Alasan user tidak boleh me-review entri ini (aturan 4 mata), atau null bila boleh.
+     * updated_by = pengubah isi terakhir (submit/approve/reject tidak mengubahnya).
+     */
+    public function reviewBlockedReason(User $user): ?string
+    {
+        if ((int) $this->created_by === (int) $user->id) {
+            return 'Tidak bisa me-review entri buatan sendiri.';
+        }
+
+        if ($this->updated_by !== null && (int) $this->updated_by === (int) $user->id) {
+            return 'Tidak bisa me-review entri yang isinya terakhir Anda ubah.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Nama file saat diunduh: nama dari pengunggah, tapi ekstensinya diambil dari path tersimpan
+     * (hasil deteksi isi file). PDF yang diberi nama "struk.bat" terunduh sebagai "struk.pdf".
+     * Hanya huruf, angka, spasi dan . _ ( ) - yang dipertahankan: karakter seperti " ; * = ' bisa
+     * mengecoh parser Content-Disposition di klien, karakter kontrol membuat header gagal dibuat,
+     * dan karakter bidi (RTLO) membalik tampilan ekstensi.
+     */
+    public function attachmentDownloadName(): string
+    {
+        $base = (string) preg_replace('/[^\p{L}\p{M}\p{N} ._()-]+/u', '_', pathinfo((string) $this->attachment_name, PATHINFO_FILENAME));
+        $base = mb_substr(trim($base, ' .'), 0, 150) ?: 'lampiran';
+        $extension = pathinfo((string) $this->attachment_path, PATHINFO_EXTENSION);
+
+        return $extension !== '' ? "{$base}.{$extension}" : $base;
+    }
 }

@@ -113,7 +113,7 @@ class CarbonEntryController extends Controller
             return response()->json(['message' => 'Entri ini belum punya lampiran.'], 404);
         }
 
-        return $disk->download($entry->attachment_path, $entry->attachment_name);
+        return $disk->download($entry->attachment_path, $entry->attachmentDownloadName());
     }
 
     public function deleteAttachment(Request $request, int $projectId, int $id): JsonResponse
@@ -226,13 +226,9 @@ class CarbonEntryController extends Controller
             abort(403, 'Hanya owner atau admin yang bisa me-review entry.');
         }
 
-        if ((int) $entry->created_by === (int) $user->id) {
-            abort(403, 'Tidak bisa me-review entri buatan sendiri.');
-        }
-
-        // updated_by = pengubah isi terakhir (submit/approve/reject tidak mengubahnya)
-        if ($entry->updated_by !== null && (int) $entry->updated_by === (int) $user->id) {
-            abort(403, 'Tidak bisa me-review entri yang isinya terakhir Anda ubah.');
+        // Dicek ulang di service pada baris yang dikunci
+        if ($reason = $entry->reviewBlockedReason($user)) {
+            abort(403, $reason);
         }
     }
 }

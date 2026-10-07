@@ -9,14 +9,17 @@ use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Notifications\EntryWorkflowNotification;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CarbonEntryService
 {
@@ -93,20 +96,36 @@ class CarbonEntryService
      */
     public function attach(CarbonEntry $entry, UploadedFile $file, User $user): CarbonEntry
     {
-        $this->ensureEditable($entry, 'Lampiran hanya bisa diubah pada entry berstatus draft atau ditolak.');
+        $message = 'Lampiran hanya bisa diubah pada entry berstatus draft atau ditolak.';
+        $this->ensureEditable($entry, $message);
 
-        $oldPath = $entry->attachment_path;
+        // File disimpan sebelum transaksi supaya lock baris tidak tertahan selama upload.
+        // Kalau status berubah di tengah jalan atau update gagal, file baru dihapus lagi.
         $path = $file->storeAs(
             "attachments/{$entry->project_id}/{$entry->id}",
             Str::uuid().'.'.$file->extension(),
             self::ATTACHMENT_DISK,
         );
 
-        $entry->update([
-            'attachment_path' => $path,
-            'attachment_name' => mb_substr($file->getClientOriginalName(), 0, 255),
-            'updated_by'      => $user->id,
-        ]);
+        try {
+            [$entry, $oldPath] = DB::transaction(function () use ($entry, $file, $user, $path, $message) {
+                $entry = $this->lockForChange($entry);
+                $this->ensureEditable($entry, $message);
+
+                $oldPath = $entry->attachment_path;
+                $entry->update([
+                    'attachment_path' => $path,
+                    'attachment_name' => mb_substr($file->getClientOriginalName(), 0, 255),
+                    'updated_by'      => $user->id,
+                ]);
+
+                return [$entry, $oldPath];
+            });
+        } catch (Throwable $e) {
+            Storage::disk(self::ATTACHMENT_DISK)->delete($path);
+
+            throw $e;
+        }
 
         if ($oldPath) {
             Storage::disk(self::ATTACHMENT_DISK)->delete($oldPath);
@@ -117,13 +136,20 @@ class CarbonEntryService
 
     public function detach(CarbonEntry $entry, User $user): CarbonEntry
     {
-        $this->ensureEditable($entry, 'Lampiran hanya bisa dihapus pada entry berstatus draft atau ditolak.');
+        // File baru dihapus setelah commit, supaya entri tidak menunjuk file yang sudah hilang
+        [$entry, $oldPath] = DB::transaction(function () use ($entry, $user) {
+            $entry = $this->lockForChange($entry);
+            $this->ensureEditable($entry, 'Lampiran hanya bisa dihapus pada entry berstatus draft atau ditolak.');
 
-        if ($entry->attachment_path) {
-            Storage::disk(self::ATTACHMENT_DISK)->delete($entry->attachment_path);
+            $oldPath = $entry->attachment_path;
+            $entry->update(['attachment_path' => null, 'attachment_name' => null, 'updated_by' => $user->id]);
+
+            return [$entry, $oldPath];
+        });
+
+        if ($oldPath) {
+            Storage::disk(self::ATTACHMENT_DISK)->delete($oldPath);
         }
-
-        $entry->update(['attachment_path' => null, 'attachment_name' => null, 'updated_by' => $user->id]);
 
         return $entry->fresh();
     }
@@ -138,6 +164,16 @@ class CarbonEntryService
         if (! $entry->isEditable()) {
             throw ValidationException::withMessages(['status' => [$message]]);
         }
+    }
+
+    /**
+     * Baca ulang entri dengan baris terkunci (wajib dipanggil di dalam transaksi). Status dicek
+     * dari data terbaru, bukan dari model yang dibawa request: approve dan tolak yang datang
+     * bersamaan diproses bergiliran, dan yang kedua mendapat 422 alih-alih menimpa yang pertama.
+     */
+    private function lockForChange(CarbonEntry $entry): CarbonEntry
+    {
+        return CarbonEntry::whereKey($entry->getKey())->lockForUpdate()->firstOrFail();
     }
 
     public function create(array $data, Project $project, User $creator): CarbonEntry
@@ -170,64 +206,63 @@ class CarbonEntryService
 
     public function update(CarbonEntry $entry, array $data, User $updater): CarbonEntry
     {
-        if (! $entry->isEditable()) {
-            throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus draft atau ditolak yang bisa diubah.'],
+        return DB::transaction(function () use ($entry, $data, $updater) {
+            $entry = $this->lockForChange($entry);
+            $this->ensureEditable($entry, 'Hanya entry berstatus draft atau ditolak yang bisa diubah.');
+
+            $factor = EmissionFactor::where('id', $data['emission_factor_id'])
+                ->where('is_active', true)
+                ->firstOrFail();
+
+            $co2eKg = $this->calculate($data['quantity'], $factor->factor_value);
+            $date = Carbon::parse($data['entry_date']);
+
+            $entry->update([
+                'emission_factor_id'    => $factor->id,
+                'category_id'           => $factor->category_id,
+                'entry_date'            => $date->toDateString(),
+                'period_month'          => $date->month,
+                'period_year'           => $date->year,
+                'quantity'              => $data['quantity'],
+                'source_unit'           => $factor->source_unit,
+                'emission_factor_value' => $factor->factor_value,
+                'co2e_kg'               => $co2eKg,
+                'description'           => $data['description'] ?? null,
+                'vendor_name'           => $data['vendor_name'] ?? null,
+                'activity_type'         => $data['activity_type'] ?? null,
+                'updated_by'            => $updater->id,
             ]);
-        }
 
-        $factor = EmissionFactor::where('id', $data['emission_factor_id'])
-            ->where('is_active', true)
-            ->firstOrFail();
-
-        $co2eKg = $this->calculate($data['quantity'], $factor->factor_value);
-        $date = Carbon::parse($data['entry_date']);
-
-        $entry->update([
-            'emission_factor_id'    => $factor->id,
-            'category_id'           => $factor->category_id,
-            'entry_date'            => $date->toDateString(),
-            'period_month'          => $date->month,
-            'period_year'           => $date->year,
-            'quantity'              => $data['quantity'],
-            'source_unit'           => $factor->source_unit,
-            'emission_factor_value' => $factor->factor_value,
-            'co2e_kg'               => $co2eKg,
-            'description'           => $data['description'] ?? null,
-            'vendor_name'           => $data['vendor_name'] ?? null,
-            'activity_type'         => $data['activity_type'] ?? null,
-            'updated_by'            => $updater->id,
-        ]);
-
-        return $entry->fresh(['emissionFactor', 'category', 'createdBy']);
+            return $entry->fresh(['emissionFactor', 'category', 'createdBy']);
+        });
     }
 
     public function delete(CarbonEntry $entry): void
     {
-        if (! $entry->isEditable()) {
-            throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus draft atau ditolak yang bisa dihapus.'],
-            ]);
-        }
+        DB::transaction(function () use ($entry) {
+            $entry = $this->lockForChange($entry);
+            $this->ensureEditable($entry, 'Hanya entry berstatus draft atau ditolak yang bisa dihapus.');
 
-        $entry->delete();
+            $entry->delete();
+        });
     }
 
     public function submit(CarbonEntry $entry, ?User $submitter = null): CarbonEntry
     {
-        if (! $entry->isEditable()) {
-            throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus draft atau ditolak yang bisa di-submit.'],
-            ]);
-        }
+        $entry = DB::transaction(function () use ($entry) {
+            $entry = $this->lockForChange($entry);
+            $this->ensureEditable($entry, 'Hanya entry berstatus draft atau ditolak yang bisa di-submit.');
 
-        // Submit ulang setelah ditolak: bersihkan data penolakan sebelumnya
-        $entry->update([
-            'status'           => 'submitted',
-            'rejection_reason' => null,
-            'rejected_by'      => null,
-            'rejected_at'      => null,
-        ]);
+            // Submit ulang setelah ditolak: bersihkan data penolakan sebelumnya
+            $entry->update([
+                'status'           => 'submitted',
+                'rejection_reason' => null,
+                'rejected_by'      => null,
+                'rejected_at'      => null,
+            ]);
+
+            return $entry;
+        });
 
         if ($submitter) {
             $this->notifyOwners($entry, $submitter);
@@ -238,17 +273,19 @@ class CarbonEntryService
 
     public function approve(CarbonEntry $entry, User $approver): CarbonEntry
     {
-        if ($entry->status !== 'submitted') {
-            throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus submitted yang bisa di-approve.'],
-            ]);
-        }
+        $entry = DB::transaction(function () use ($entry, $approver) {
+            $entry = $this->lockForChange($entry);
+            $this->ensureSubmitted($entry, 'Hanya entry berstatus submitted yang bisa di-approve.');
+            $this->ensureReviewableBy($entry, $approver);
 
-        $entry->update([
-            'status'      => 'approved',
-            'approved_by' => $approver->id,
-            'approved_at' => now(),
-        ]);
+            $entry->update([
+                'status'      => 'approved',
+                'approved_by' => $approver->id,
+                'approved_at' => now(),
+            ]);
+
+            return $entry;
+        });
 
         $this->notifyCreator($entry, new EntryWorkflowNotification('entry_approved', $entry, $approver));
 
@@ -257,22 +294,42 @@ class CarbonEntryService
 
     public function reject(CarbonEntry $entry, User $reviewer, string $reason): CarbonEntry
     {
-        if ($entry->status !== 'submitted') {
-            throw ValidationException::withMessages([
-                'status' => ['Hanya entry berstatus submitted yang bisa ditolak.'],
-            ]);
-        }
+        $entry = DB::transaction(function () use ($entry, $reviewer, $reason) {
+            $entry = $this->lockForChange($entry);
+            $this->ensureSubmitted($entry, 'Hanya entry berstatus submitted yang bisa ditolak.');
+            $this->ensureReviewableBy($entry, $reviewer);
 
-        $entry->update([
-            'status'           => 'rejected',
-            'rejection_reason' => $reason,
-            'rejected_by'      => $reviewer->id,
-            'rejected_at'      => now(),
-        ]);
+            $entry->update([
+                'status'           => 'rejected',
+                'rejection_reason' => $reason,
+                'rejected_by'      => $reviewer->id,
+                'rejected_at'      => now(),
+            ]);
+
+            return $entry;
+        });
 
         $this->notifyCreator($entry, new EntryWorkflowNotification('entry_rejected', $entry, $reviewer, $reason));
 
         return $entry->fresh(['rejectedBy']);
+    }
+
+    private function ensureSubmitted(CarbonEntry $entry, string $message): void
+    {
+        if ($entry->status !== 'submitted') {
+            throw ValidationException::withMessages(['status' => [$message]]);
+        }
+    }
+
+    /**
+     * Aturan 4 mata dicek ulang pada baris terkunci: controller membaca entri sebelum lock, jadi
+     * reviewer yang mengubah isi entri lalu submit di request paralel bisa lolos pengecekan awal.
+     */
+    private function ensureReviewableBy(CarbonEntry $entry, User $reviewer): void
+    {
+        if ($reason = $entry->reviewBlockedReason($reviewer)) {
+            throw new AuthorizationException($reason);
+        }
     }
 
     /** Owner project diberi tahu ada entri menunggu approval (kecuali pengirimnya sendiri). */

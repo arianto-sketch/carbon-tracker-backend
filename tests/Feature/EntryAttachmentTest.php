@@ -116,6 +116,73 @@ class EntryAttachmentTest extends TestCase
         $this->actingAs(User::factory()->create(), 'sanctum')->getJson($this->url())->assertForbidden();
     }
 
+    public function test_download_name_uses_detected_type_instead_of_uploader_extension(): void
+    {
+        // Isi file PDF valid, tapi nama dari pengunggah berekstensi .bat
+        $this->upload($this->member, $this->pdf('struk.bat'))->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk.pdf');
+
+        $this->upload($this->member, $this->pdf('struk'))->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk.pdf');
+    }
+
+    public function test_download_name_handles_legacy_and_unusual_names(): void
+    {
+        $name = fn (?string $original, string $path) => (new CarbonEntry)
+            ->forceFill(['attachment_name' => $original, 'attachment_path' => $path])
+            ->attachmentDownloadName();
+
+        // Lampiran lama (sebelum kolom attachment_name ada) bernilai NULL
+        $this->assertSame('lampiran.pdf', $name(null, 'attachments/1/2/uuid.pdf'));
+        $this->assertSame('lampiran.png', $name('.png', 'attachments/1/2/uuid.png'));
+        $this->assertSame('faktur.final.jpg', $name('faktur.final.exe', 'attachments/1/2/uuid.jpg'));
+        $this->assertSame('struk', $name('struk.pdf', 'attachments/1/2/uuid'));
+        $this->assertSame('Struk Café (1).pdf', $name('Struk Café (1).pdf', 'attachments/1/2/uuid.pdf'));
+    }
+
+    public function test_download_name_strips_characters_that_can_trick_header_parsers(): void
+    {
+        $name = fn (string $original) => (new CarbonEntry)
+            ->forceFill(['attachment_name' => $original, 'attachment_path' => 'attachments/1/2/uuid.pdf'])
+            ->attachmentDownloadName();
+
+        // Parser filename* yang longgar di klien bisa membaca "evil.bat" dari dalam nama ber-quote
+        $this->assertSame('filename_utf-8_evil.bat_.pdf', $name("filename*=utf-8''evil.bat;.png"));
+        $this->assertSame('Invoice _Maret_.pdf', $name('Invoice "Maret".pdf'));
+        // Karakter kontrol membuat header gagal dibuat (500); RTLO membalik tampilan ekstensi
+        $this->assertSame('struk_.pdf', $name("struk\u{10}.pdf"));
+        $this->assertSame('invoice_gpj.pdf', $name("invoice\u{202E}gpj.exe"));
+        $this->assertSame('lampiran.pdf', $name('...pdf'));
+    }
+
+    public function test_tricky_upload_names_download_safely(): void
+    {
+        $this->upload($this->member, $this->pdf("filename*=utf-8''evil.bat;.png"))->assertOk();
+        $response = $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk();
+        $response->assertDownload('filename_utf-8_evil.bat_.pdf');
+        $this->assertStringNotContainsString("utf-8''evil", (string) $response->headers->get('Content-Disposition'));
+
+        $this->upload($this->member, $this->pdf("struk\u{13}.pdf"))->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk_.pdf');
+    }
+
+    public function test_frontend_on_another_origin_can_read_download_filename(): void
+    {
+        // Tanpa expose, browser menyembunyikan Content-Disposition dari axios dan frontend
+        // jatuh ke attachment_name, yang ekstensinya berasal dari pengunggah
+        $this->upload($this->member, $this->pdf('struk.bat'))->assertOk();
+
+        $response = $this->actingAs($this->owner, 'sanctum')
+            ->withHeaders(['Origin' => 'http://localhost:5173'])
+            ->get($this->url())
+            ->assertOk();
+
+        $this->assertStringContainsStringIgnoringCase(
+            'Content-Disposition',
+            (string) $response->headers->get('Access-Control-Expose-Headers'),
+        );
+    }
+
     public function test_download_without_attachment_is_not_found(): void
     {
         $this->actingAs($this->member, 'sanctum')->getJson($this->url())
