@@ -1,58 +1,84 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Carbon Footprint Tracker — Backend
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+REST API (`/api/v1`) untuk Carbon Footprint Tracker, dibangun dengan Laravel 13, autentikasi token Sanctum, queue untuk pembuatan laporan, dan Laravel Excel untuk import/export. Frontend-nya ada di repo terpisah: [carbon-tracker-frontend](https://github.com/arianto-sketch/carbon-tracker-frontend).
 
-## About Laravel
+## Prasyarat
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP `^8.3` dan Composer.
+- Database:
+  - SQLite (default `.env.example`), atau
+  - MySQL 8. MySQL dipakai di production, jadi uji di MySQL sebelum rilis (lihat [Test di MySQL](#test-di-mysql)).
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+> **Windows + Laragon:** PHP Laragon tidak otomatis ada di PATH Git Bash. Tambahkan dulu, misalnya `export PATH="/c/laragon/bin/php/php-8.3.x-Win32-vs16-x64:$PATH"`.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Setup lokal
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite      # kalau memakai SQLite; untuk MySQL isi DB_* di .env
+php artisan migrate --seed
+php artisan serve                   # http://127.0.0.1:8000
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+`--seed` membuat kategori, faktor emisi, dan dua akun dengan password `password`:
 
-## Contributing
+| Email | Role |
+|---|---|
+| `admin@logique.co.id` | admin |
+| `arianto@logique.co.id` | pm |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### Proses latar
 
-## Code of Conduct
+- **Queue** (`QUEUE_CONNECTION=database`): laporan dibuat oleh job, jadi jalankan `php artisan queue:work`. Untuk development atau E2E, `QUEUE_CONNECTION=sync` membuat laporan langsung selesai.
+- **Scheduler**: pasang cron `* * * * * php artisan schedule:run`. Scheduler membersihkan token Sanctum yang kedaluwarsa dan file temp import Laravel Excel setiap hari.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Test
 
-## Security Vulnerabilities
+### PHPUnit (default: SQLite in-memory)
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+php artisan test
+php artisan test --filter=EntryAttachmentTest     # satu file / satu test
+```
 
-## License
+`phpunit.xml` memakai SQLite `:memory:`, jadi tidak ada database yang tersentuh.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Test di MySQL
+
+Beberapa perilaku hanya benar-benar teruji di MySQL:
+- `lockForUpdate` diabaikan oleh SQLite.
+- Perubahan enum dan index di migration.
+
+Jalankan suite yang sama di MySQL dengan meng-override env dari shell (env shell menang atas `.env` dan `phpunit.xml`):
+
+```bash
+# PERINGATAN: RefreshDatabase mengosongkan database ini. Jangan pakai database development/production.
+mysql -uroot -e "CREATE DATABASE carbon_tracker_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+DB_CONNECTION=mysql DB_DATABASE=carbon_tracker_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD= php artisan test
+```
+
+- Test yang menjalankan DDL (misalnya uji rollback migration) hanya berjalan di SQLite dan otomatis di-skip di MySQL, karena DDL di MySQL meng-commit transaksi test.
+- Race condition (dua request bersamaan) tidak bisa direproduksi oleh PHPUnit yang berjalan sekuensial. Test otomatis hanya membuktikan bahwa status dibaca ulang dari database. Lock-nya sendiri diverifikasi manual dengan dua koneksi MySQL; contoh skenarionya ada di deskripsi PR #11.
+
+### Migration di MySQL
+
+Sebelum rilis yang membawa migration baru, uji jalur upgrade di database salinan. Jangan memakai `migrate:fresh`:
+
+```bash
+php artisan migrate                      # di atas data lama
+php artisan migrate:rollback --step=N    # N = jumlah migration baru
+php artisan migrate
+```
+
+### E2E (Playwright)
+
+Spec E2E ada di repo frontend dan berjalan terhadap backend ini. Siapkan backend dengan **database khusus E2E**, karena setiap run membuat data baru:
+
+```bash
+php artisan migrate:fresh --seed
+QUEUE_CONNECTION=sync php artisan serve --host=127.0.0.1 --port=8000
+```
+
+Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-sketch/carbon-tracker-frontend#test-e2e-playwright).
