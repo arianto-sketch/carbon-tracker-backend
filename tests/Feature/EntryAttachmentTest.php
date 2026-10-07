@@ -116,6 +116,16 @@ class EntryAttachmentTest extends TestCase
         $this->actingAs(User::factory()->create(), 'sanctum')->getJson($this->url())->assertForbidden();
     }
 
+    public function test_download_name_uses_detected_type_instead_of_uploader_extension(): void
+    {
+        // Isi file PDF valid, tapi nama dari pengunggah berekstensi .bat
+        $this->upload($this->member, $this->pdf('struk.bat'))->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk.pdf');
+
+        $this->upload($this->member, $this->pdf('struk'))->assertOk();
+        $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk.pdf');
+    }
+
     public function test_download_without_attachment_is_not_found(): void
     {
         $this->actingAs($this->member, 'sanctum')->getJson($this->url())
