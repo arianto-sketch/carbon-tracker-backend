@@ -26,4 +26,15 @@ class ApiRateLimitTest extends TestCase
         // Batas dihitung per user, bukan per IP
         $this->actingAs($other, 'sanctum')->getJson('/api/v1/auth/me')->assertOk();
     }
+
+    public function test_limit_follows_api_rate_limit_configuration(): void
+    {
+        $user = User::factory()->create();
+
+        config(['app.api_rate_limit' => 3]);
+        foreach (range(1, 3) as $i) {
+            $this->actingAs($user, 'sanctum')->getJson('/api/v1/auth/me')->assertOk();
+        }
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/auth/me')->assertStatus(429);
+    }
 }

@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\CarbonEntry;
 use App\Models\User;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Filesystem\Filesystem;
+use Mockery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\BuildsCarbonData;
@@ -49,10 +51,28 @@ class PurgeDeletedEntryAttachmentsTest extends TestCase
             ->assertSuccessful();
 
         Storage::disk('local')->assertMissing($oldPath);
-        $this->assertNull(CarbonEntry::withTrashed()->find($old->id)->attachment_path);
+        $purged = CarbonEntry::withTrashed()->find($old->id);
+        $this->assertNull($purged->attachment_path);
+        $this->assertNull($purged->attachment_name, 'Sama seperti hapus lampiran manual');
         Storage::disk('local')->assertExists($recent->attachment_path);
         Storage::disk('local')->assertExists($active->attachment_path);
         $this->assertNotNull(CarbonEntry::withTrashed()->find($recent->id)->attachment_path);
+    }
+
+    public function test_path_is_kept_when_the_file_cannot_be_deleted(): void
+    {
+        $old = $this->entryWithAttachment(31);
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('delete')->andReturn(false);
+        $disk->shouldReceive('exists')->andReturn(true);
+        Storage::shouldReceive('disk')->andReturn($disk);
+
+        // Path dipertahankan supaya bisa dicoba lagi di jadwal berikutnya
+        $this->artisan('entries:purge-deleted-attachments')
+            ->expectsOutputToContain('1 gagal')
+            ->assertFailed();
+
+        $this->assertNotNull(CarbonEntry::withTrashed()->find($old->id)->attachment_path);
     }
 
     public function test_purge_is_scheduled_daily(): void

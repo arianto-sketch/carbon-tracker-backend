@@ -70,6 +70,20 @@ class DashboardQueryTest extends TestCase
         $this->assertSame(1, $rows[0]['entry_count']);
     }
 
+    public function test_project_emissions_respect_project_filter_and_deleted_entries(): void
+    {
+        $this->projectWithEmission('P-1', 10);
+        $second = $this->projectWithEmission('P-2', 100);
+        $this->makeApprovedEntry($second, $this->owner, 1000, '2026-03-20')->delete();
+
+        $rows = collect(app(DashboardService::class)->getProjectsWithEmissions($this->admin, ['project_id' => $second->id]))->keyBy('code');
+
+        $this->assertEqualsWithDelta(231.0, $rows['P-2']['total_co2e_kg'], 0.001, 'Entri terhapus tidak dihitung');
+        $this->assertSame(1, $rows['P-2']['entry_count']);
+        $this->assertSame(0.0, $rows['P-1']['total_co2e_kg'], 'Project lain bernilai 0 saat difilter');
+        $this->assertSame(0, $rows['P-1']['entry_count']);
+    }
+
     public function test_admin_dashboard_excludes_entries_of_deleted_projects(): void
     {
         $this->projectWithEmission('P-1', 100);

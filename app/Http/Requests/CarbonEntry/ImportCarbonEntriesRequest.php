@@ -15,15 +15,23 @@ class ImportCarbonEntriesRequest extends FormRequest
 {
     use AuthorizesProjectEntries;
 
+    private ?Project $project = null;
+
     /**
      * Akses dicek sebelum aturan validasi dijalankan: tanpa ini non-member bisa memicu
      * sampai MAX_ROWS query `exists` per request sebelum akhirnya ditolak.
      */
     public function authorize(): bool
     {
-        $this->authorizeProjectWrite($this, Project::findOrFail($this->route('projectId')));
+        $this->authorizeProjectWrite($this, $this->project());
 
         return true;
+    }
+
+    /** Project dari URL, dimuat sekali dan dipakai ulang controller. */
+    public function project(): Project
+    {
+        return $this->project ??= Project::findOrFail($this->route('projectId'));
     }
 
     public function rules(): array

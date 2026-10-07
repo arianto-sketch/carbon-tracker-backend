@@ -221,6 +221,7 @@ class EntryImportTest extends TestCase
 
         // Validasi baris (query exists per baris) tidak boleh jalan sebelum akses dicek
         $this->assertLessThan(10, count(DB::getQueryLog()));
+        DB::disableQueryLog();
     }
 
     public function test_viewer_cannot_import(): void

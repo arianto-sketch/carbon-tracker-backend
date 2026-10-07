@@ -77,17 +77,26 @@ class TargetProgressTest extends TestCase
         $this->entry('gasoline_vehicle', 7, '2026-04-05');
         $this->entry('paper_a4_ream', 25, '2026-02-14');
         $this->entry('paper_a4_ream', 3, '2026-03-01', 'draft');            // belum approved
+        $this->entry('gasoline_vehicle', 11, '2026-08-01');
+        $this->entry('gasoline_vehicle', 13, '2026-11-30');
         $this->entry('gasoline_vehicle', 1000, '2025-03-20');               // tahun lain
         $this->entry('gasoline_vehicle', 500, '2026-03-20', 'approved', $this->makeProject($this->owner, 'LAIN'));
+        $this->entry('gasoline_vehicle', 900, '2026-03-05');
+        CarbonEntry::where('co2e_kg', 900)->first()->delete();              // entri terhapus
 
         $expected = [
-            $this->target('yearly', 2026)->id                                => 172.0,
-            $this->target('yearly', 2026, null, 'gasoline_vehicle')->id      => 147.0,
+            $this->target('yearly', 2026)->id                                => 196.0,
+            $this->target('yearly', 2026, null, 'gasoline_vehicle')->id      => 171.0,
             $this->target('quarterly', 2026, 1)->id                          => 165.0,
             $this->target('quarterly', 2026, 2, 'gasoline_vehicle')->id      => 7.0,
+            $this->target('quarterly', 2026, 3)->id                          => 11.0,
+            $this->target('quarterly', 2026, 4, 'gasoline_vehicle')->id      => 13.0,
             $this->target('monthly', 2026, 3, 'gasoline_vehicle')->id        => 40.0,
             $this->target('monthly', 2026, 2, 'paper_a4_ream')->id           => 25.0,
             $this->target('yearly', 2025)->id                                => 1000.0,
+            // period_value kosong pada target bulanan/kuartalan dihitung setahun penuh
+            $this->target('monthly', 2026, null)->id                         => 196.0,
+            $this->target('quarterly', 2026, null, 'gasoline_vehicle')->id   => 171.0,
         ];
 
         $actuals = $this->actuals();

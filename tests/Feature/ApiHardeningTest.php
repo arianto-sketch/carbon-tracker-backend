@@ -7,6 +7,7 @@ use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class ApiHardeningTest extends TestCase
@@ -35,6 +36,8 @@ class ApiHardeningTest extends TestCase
             ['getJson', '/api/v1/projects/1/targets/abc'],
             ['getJson', '/api/v1/emission-factors/abc'],
             ['getJson', '/api/v1/reports/jobs/abc'],
+            // Angka di luar jangkauan int juga TypeError di controller
+            ['getJson', '/api/v1/projects/99999999999999999999'],
         ];
 
         foreach ($requests as [$method, $url]) {
@@ -45,16 +48,21 @@ class ApiHardeningTest extends TestCase
     public function test_notification_ids_are_still_accepted(): void
     {
         // Id notifikasi berupa UUID, jadi tidak boleh ikut dibatasi ke angka
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/notifications/9b2e6f0c-1d3a-4c5e-8f7a-0b1c2d3e4f5a/read')
-            ->assertNotFound()
-            ->assertJsonMissingPath('exception');
+        $user = User::factory()->create();
+        $id = (string) Str::uuid();
+        $user->notifications()->create(['id' => $id, 'type' => 'entry_approved', 'data' => ['type' => 'entry_approved']]);
+
+        $this->actingAs($user, 'sanctum')->postJson("/api/v1/notifications/{$id}/read")
+            ->assertOk()
+            ->assertJsonPath('data.id', $id);
+
+        $this->assertNotNull($user->notifications()->first()->read_at);
     }
 
     public function test_search_treats_percent_and_underscore_literally(): void
     {
         $admin = User::factory()->admin()->create();
-        foreach (['Diskon 100%' => 'D-1', 'Diskon 1000' => 'D-2', 'Kode_A' => 'K-1', 'KodeXA' => 'K-2'] as $name => $code) {
+        foreach (['Diskon 100%' => 'D-1', 'Diskon 1000' => 'D-2', 'Kode_A' => 'K-1', 'KodeXA' => 'K-2', 'Hore!' => 'H-1', 'Horee' => 'H-2'] as $name => $code) {
             Project::create(['name' => $name, 'code' => $code, 'start_date' => '2026-01-01', 'created_by' => $admin->id]);
         }
         User::factory()->create(['name' => 'Budi_Santoso']);
@@ -71,6 +79,8 @@ class ApiHardeningTest extends TestCase
 
         $this->assertSame(['Diskon 100%'], $names('/api/v1/projects?search='.urlencode('100%')));
         $this->assertSame(['Kode_A'], $names('/api/v1/projects?search=Kode_'));
+        // "!" adalah karakter ESCAPE, jadi harus ikut di-escape
+        $this->assertSame(['Hore!'], $names('/api/v1/projects?search='.urlencode('!')));
         $this->assertSame(['Budi_Santoso'], $names('/api/v1/users?search=Budi_'));
         $this->assertSame(['Daur ulang 50%'], $names('/api/v1/emission-factors?search='.urlencode('50%')));
     }
