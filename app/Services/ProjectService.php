@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ProjectService
@@ -83,28 +84,47 @@ class ProjectService
 
     public function updateMemberRole(Project $project, int $userId, string $role): ProjectMember
     {
-        $member = ProjectMember::where('project_id', $project->id)
-            ->where('user_id', $userId)
-            ->firstOrFail();
+        return DB::transaction(function () use ($project, $userId, $role) {
+            // Kunci semua owner dulu: dua owner yang saling menurunkan secara bersamaan diproses
+            // bergiliran, jadi yang kedua melihat jumlah owner terbaru.
+            $lockedOwners = ProjectMember::where('project_id', $project->id)->where('role', 'owner')
+                ->orderBy('id')->lockForUpdate()->get(['id']);
+            $member = $this->lockedMember($project, $userId);
 
-        $member->update(['role' => $role]);
+            if ($member->role === 'owner' && $role !== 'owner' && $lockedOwners->count() <= 1) {
+                throw ValidationException::withMessages([
+                    'role' => ['Project harus punya minimal satu owner. Jadikan anggota lain owner terlebih dahulu.'],
+                ]);
+            }
 
-        return $member->fresh('user');
+            $member->update(['role' => $role]);
+
+            return $member->fresh('user');
+        });
     }
 
     public function removeMember(Project $project, int $userId): void
     {
-        $member = ProjectMember::where('project_id', $project->id)
+        DB::transaction(function () use ($project, $userId) {
+            // Role dicek pada baris terkunci: anggota yang baru saja dijadikan owner tidak ikut terhapus
+            $member = $this->lockedMember($project, $userId);
+
+            if ($member->role === 'owner') {
+                throw ValidationException::withMessages([
+                    'user_id' => ['Owner project tidak bisa dihapus dari member.'],
+                ]);
+            }
+
+            $member->delete();
+        });
+    }
+
+    private function lockedMember(Project $project, int $userId): ProjectMember
+    {
+        return ProjectMember::where('project_id', $project->id)
             ->where('user_id', $userId)
+            ->lockForUpdate()
             ->firstOrFail();
-
-        if ($member->role === 'owner') {
-            throw ValidationException::withMessages([
-                'user_id' => ['Owner project tidak bisa dihapus dari member.'],
-            ]);
-        }
-
-        $member->delete();
     }
 
     public function getSummary(Project $project): array
