@@ -20,13 +20,15 @@ class ReportFormulaInjectionTest extends TestCase
 {
     use BuildsCarbonData, RefreshDatabase;
 
+    private const PROJECT = '-2+3';
+
     private const DESCRIPTION = '=HYPERLINK("http://evil.test","Klik")';
 
     private const VENDOR = "+cmd|' /C calc'!A0";
 
-    private const ACTIVITY = '@SUM(1+1)';
+    private const ACTIVITY = '=1+1';
 
-    private const CREATOR = '-2+3';
+    private const CREATOR = '@SUM(1+1)';
 
     protected function setUp(): void
     {
@@ -34,7 +36,9 @@ class ReportFormulaInjectionTest extends TestCase
         Storage::fake('local');
         $this->seedMasterData();
         $creator = User::factory()->create(['name' => self::CREATOR]);
-        $this->makeApprovedEntry($this->makeProject($creator), $creator)->update([
+        $project = $this->makeProject($creator);
+        $project->update(['name' => self::PROJECT]);
+        $this->makeApprovedEntry($project, $creator)->update([
             'description'   => self::DESCRIPTION,
             'vendor_name'   => self::VENDOR,
             'activity_type' => self::ACTIVITY,
@@ -59,14 +63,17 @@ class ReportFormulaInjectionTest extends TestCase
     {
         $sheet = IOFactory::load($this->generate('xlsx'))->getActiveSheet();
 
-        // Baris 2 = data. K = Keterangan, L = Vendor, M = Tipe Aktivitas, N = Di-input oleh
-        foreach (['K2' => self::DESCRIPTION, 'L2' => self::VENDOR, 'M2' => self::ACTIVITY, 'N2' => self::CREATOR] as $cell => $text) {
+        // Baris 2 = data. B = Project, K = Keterangan, L = Vendor, M = Tipe Aktivitas, N = Di-input oleh
+        $texts = ['B2' => self::PROJECT, 'K2' => self::DESCRIPTION, 'L2' => self::VENDOR, 'M2' => self::ACTIVITY, 'N2' => self::CREATOR];
+        foreach ($texts as $cell => $text) {
             $this->assertSame(DataType::TYPE_STRING, $sheet->getCell($cell)->getDataType(), "Sel {$cell}");
             $this->assertSame($text, $sheet->getCell($cell)->getValue(), "Sel {$cell} harus tetap utuh");
         }
 
-        // Angka tetap numerik supaya bisa dijumlah di Excel
-        $this->assertSame(DataType::TYPE_NUMERIC, $sheet->getCell('J2')->getDataType());
+        // Angka (Jumlah, Faktor, Emisi) tetap numerik supaya bisa dijumlah di Excel
+        foreach (['G2', 'I2', 'J2'] as $cell) {
+            $this->assertSame(DataType::TYPE_NUMERIC, $sheet->getCell($cell)->getDataType(), "Sel {$cell}");
+        }
     }
 
     public function test_csv_prefixes_formula_triggers_with_apostrophe(): void
@@ -74,6 +81,7 @@ class ReportFormulaInjectionTest extends TestCase
         $rows = array_map('str_getcsv', file($this->generate('csv'), FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES));
         $row = $rows[1];
 
+        $this->assertSame("'".self::PROJECT, $row[1]);
         $this->assertSame("'".self::DESCRIPTION, $row[10]);
         $this->assertSame("'".self::VENDOR, $row[11]);
         $this->assertSame("'".self::ACTIVITY, $row[12]);

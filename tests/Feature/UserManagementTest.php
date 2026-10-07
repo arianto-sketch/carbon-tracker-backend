@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class UserManagementTest extends TestCase
@@ -116,6 +118,31 @@ class UserManagementTest extends TestCase
         $this->actingAs($this->admin, 'sanctum')
             ->putJson("/api/v1/users/{$other->id}", ['role' => 'pm'])
             ->assertOk();
+    }
+
+    public function test_inactive_admin_can_be_demoted_while_one_active_admin_remains(): void
+    {
+        $inactive = User::factory()->admin()->create(['is_active' => false]);
+
+        $this->actingAs($this->admin, 'sanctum')
+            ->putJson("/api/v1/users/{$inactive->id}", ['role' => 'pm'])
+            ->assertOk()
+            ->assertJsonPath('data.role', 'pm');
+    }
+
+    public function test_admin_count_is_read_from_the_database_not_the_stale_request_model(): void
+    {
+        // Admin lain sudah diturunkan oleh request yang commit lebih dulu
+        $other = User::factory()->admin()->create();
+        $staleSelf = $this->admin->fresh();
+        User::whereKey($other->id)->update(['role' => 'pm']);
+
+        $this->assertThrows(
+            fn () => app(UserService::class)->update($staleSelf, ['role' => 'pm'], $other),
+            ValidationException::class,
+        );
+
+        $this->assertSame('admin', $this->admin->fresh()->role);
     }
 
     public function test_deactivated_user_loses_tokens_immediately(): void

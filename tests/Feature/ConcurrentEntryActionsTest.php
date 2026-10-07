@@ -6,6 +6,7 @@ use App\Models\CarbonEntry;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\CarbonEntryService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -119,5 +120,28 @@ class ConcurrentEntryActionsTest extends TestCase
 
         $this->assertNull($entry->fresh()->attachment_path);
         $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_failed_attachment_update_does_not_leave_an_orphan_file(): void
+    {
+        Storage::fake('local');
+        $entry = $this->makeEntry($this->project, $this->member, 'draft');
+        CarbonEntry::updating(fn () => throw new \RuntimeException('audit log gagal'));
+
+        $this->assertThrows(
+            fn () => $this->service->attach($entry, UploadedFile::fake()->create('struk.pdf', 10, 'application/pdf'), $this->member),
+            \RuntimeException::class,
+        );
+
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_action_on_an_entry_deleted_meanwhile_is_not_found(): void
+    {
+        $entry = $this->makeEntry($this->project, $this->member, 'submitted');
+        $stale = $entry->fresh();
+        CarbonEntry::whereKey($entry->id)->first()->delete();
+
+        $this->assertThrows(fn () => $this->service->approve($stale, $this->owner), ModelNotFoundException::class);
     }
 }

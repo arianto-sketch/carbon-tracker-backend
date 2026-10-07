@@ -43,7 +43,7 @@ class UserService
             if ($deactivating || $demoting) {
                 // Kunci semua admin aktif: dua admin yang saling menurunkan/menonaktifkan secara
                 // bersamaan diproses bergiliran, jadi yang kedua melihat jumlah admin terbaru.
-                $activeAdminIds = User::where('role', 'admin')->where('is_active', true)->lockForUpdate()->pluck('id');
+                $activeAdminIds = User::where('role', 'admin')->where('is_active', true)->orderBy('id')->lockForUpdate()->pluck('id');
 
                 if ($activeAdminIds->contains($user->id) && $activeAdminIds->count() <= 1) {
                     throw ValidationException::withMessages([

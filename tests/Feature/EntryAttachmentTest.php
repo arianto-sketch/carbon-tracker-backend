@@ -126,6 +126,19 @@ class EntryAttachmentTest extends TestCase
         $this->actingAs($this->owner, 'sanctum')->get($this->url())->assertOk()->assertDownload('struk.pdf');
     }
 
+    public function test_download_name_handles_legacy_and_unusual_names(): void
+    {
+        $name = fn (?string $original, string $path) => (new CarbonEntry)
+            ->forceFill(['attachment_name' => $original, 'attachment_path' => $path])
+            ->attachmentDownloadName();
+
+        // Lampiran lama (sebelum kolom attachment_name ada) bernilai NULL
+        $this->assertSame('lampiran.pdf', $name(null, 'attachments/1/2/uuid.pdf'));
+        $this->assertSame('lampiran.png', $name('.png', 'attachments/1/2/uuid.png'));
+        $this->assertSame('faktur.final.jpg', $name('faktur.final.exe', 'attachments/1/2/uuid.jpg'));
+        $this->assertSame('struk', $name('struk.pdf', 'attachments/1/2/uuid'));
+    }
+
     public function test_frontend_on_another_origin_can_read_download_filename(): void
     {
         // Tanpa expose, browser menyembunyikan Content-Disposition dari axios dan frontend

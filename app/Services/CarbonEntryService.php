@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CarbonEntryService
 {
@@ -94,25 +95,36 @@ class CarbonEntryService
      */
     public function attach(CarbonEntry $entry, UploadedFile $file, User $user): CarbonEntry
     {
-        [$entry, $oldPath] = DB::transaction(function () use ($entry, $file, $user) {
-            $entry = $this->lockForChange($entry);
-            $this->ensureEditable($entry, 'Lampiran hanya bisa diubah pada entry berstatus draft atau ditolak.');
+        $message = 'Lampiran hanya bisa diubah pada entry berstatus draft atau ditolak.';
+        $this->ensureEditable($entry, $message);
 
-            $oldPath = $entry->attachment_path;
-            $path = $file->storeAs(
-                "attachments/{$entry->project_id}/{$entry->id}",
-                Str::uuid().'.'.$file->extension(),
-                self::ATTACHMENT_DISK,
-            );
+        // File disimpan sebelum transaksi supaya lock baris tidak tertahan selama upload.
+        // Kalau status berubah di tengah jalan atau update gagal, file baru dihapus lagi.
+        $path = $file->storeAs(
+            "attachments/{$entry->project_id}/{$entry->id}",
+            Str::uuid().'.'.$file->extension(),
+            self::ATTACHMENT_DISK,
+        );
 
-            $entry->update([
-                'attachment_path' => $path,
-                'attachment_name' => mb_substr($file->getClientOriginalName(), 0, 255),
-                'updated_by'      => $user->id,
-            ]);
+        try {
+            [$entry, $oldPath] = DB::transaction(function () use ($entry, $file, $user, $path, $message) {
+                $entry = $this->lockForChange($entry);
+                $this->ensureEditable($entry, $message);
 
-            return [$entry, $oldPath];
-        });
+                $oldPath = $entry->attachment_path;
+                $entry->update([
+                    'attachment_path' => $path,
+                    'attachment_name' => mb_substr($file->getClientOriginalName(), 0, 255),
+                    'updated_by'      => $user->id,
+                ]);
+
+                return [$entry, $oldPath];
+            });
+        } catch (Throwable $e) {
+            Storage::disk(self::ATTACHMENT_DISK)->delete($path);
+
+            throw $e;
+        }
 
         if ($oldPath) {
             Storage::disk(self::ATTACHMENT_DISK)->delete($oldPath);
