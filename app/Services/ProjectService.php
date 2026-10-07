@@ -87,11 +87,11 @@ class ProjectService
         return DB::transaction(function () use ($project, $userId, $role) {
             // Kunci semua owner dulu: dua owner yang saling menurunkan secara bersamaan diproses
             // bergiliran, jadi yang kedua melihat jumlah owner terbaru.
-            $ownerIds = ProjectMember::where('project_id', $project->id)->where('role', 'owner')
-                ->orderBy('id')->lockForUpdate()->pluck('user_id');
+            $lockedOwners = ProjectMember::where('project_id', $project->id)->where('role', 'owner')
+                ->orderBy('id')->lockForUpdate()->get(['id']);
             $member = $this->lockedMember($project, $userId);
 
-            if ($member->role === 'owner' && $role !== 'owner' && $ownerIds->count() <= 1) {
+            if ($member->role === 'owner' && $role !== 'owner' && $lockedOwners->count() <= 1) {
                 throw ValidationException::withMessages([
                     'role' => ['Project harus punya minimal satu owner. Jadikan anggota lain owner terlebih dahulu.'],
                 ]);

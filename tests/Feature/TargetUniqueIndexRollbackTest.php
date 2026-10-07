@@ -47,12 +47,12 @@ class TargetUniqueIndexRollbackTest extends TestCase
         return require database_path('migrations/'.self::MIGRATION);
     }
 
-    private function target(int $month, bool $deleted = false): CarbonTarget
+    private function target(?int $month, bool $deleted = false, bool $allCategories = false): CarbonTarget
     {
         $target = CarbonTarget::create([
             'project_id'     => $this->project->id,
-            'category_id'    => $this->categoryId,
-            'period_type'    => 'monthly',
+            'category_id'    => $allCategories ? null : $this->categoryId,
+            'period_type'    => $month === null ? 'yearly' : 'monthly',
             'period_year'    => 2026,
             'period_value'   => $month,
             'target_co2e_kg' => 100,
@@ -79,12 +79,17 @@ class TargetUniqueIndexRollbackTest extends TestCase
         $aprilOld = $this->target(4, deleted: true);
         $aprilNewer = $this->target(4, deleted: true);
         $may = $this->target(5, deleted: true);
+        // Key dengan NULL tidak pernah bentrok di unique index, jadi tidak disentuh
+        $nullKeys = [
+            $this->target(null, deleted: true)->id, $this->target(null)->id,
+            $this->target(6, deleted: true, allCategories: true)->id, $this->target(6, allCategories: true)->id,
+        ];
 
         $this->migration()->down();
 
         $this->assertTrue($this->uniqueIndexExists());
         $remaining = CarbonTarget::withTrashed()->pluck('id')->all();
-        $this->assertEqualsCanonicalizing([$marchActive->id, $aprilNewer->id, $may->id], $remaining);
+        $this->assertEqualsCanonicalizing([$marchActive->id, $aprilNewer->id, $may->id, ...$nullKeys], $remaining);
         $this->assertNotContains($marchOld->id, $remaining);
         $this->assertNotContains($aprilOld->id, $remaining);
 

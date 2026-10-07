@@ -70,7 +70,7 @@ class ProjectOwnershipTest extends TestCase
         $this->changeRole($this->owner, $this->owner, 'owner')->assertOk();
     }
 
-    public function test_owner_count_is_read_from_the_database(): void
+    public function test_co_owner_demoted_earlier_no_longer_counts(): void
     {
         // Owner lain sudah diturunkan oleh request yang commit lebih dulu
         $this->addMember($this->project, $other = User::factory()->create(), 'owner');
@@ -82,6 +82,21 @@ class ProjectOwnershipTest extends TestCase
         );
 
         $this->assertSame('owner', $this->roleOf($this->owner));
+    }
+
+    public function test_one_of_two_owners_can_be_demoted(): void
+    {
+        $this->addMember($this->project, $other = User::factory()->create(), 'owner');
+
+        $this->changeRole($this->owner, $other, 'viewer')->assertOk();
+
+        $this->assertSame('owner', $this->roleOf($this->owner));
+        $this->assertSame('viewer', $this->roleOf($other));
+    }
+
+    public function test_changing_role_of_a_non_member_is_not_found(): void
+    {
+        $this->changeRole($this->owner, User::factory()->create(), 'member')->assertNotFound();
     }
 
     public function test_owner_cannot_be_removed(): void

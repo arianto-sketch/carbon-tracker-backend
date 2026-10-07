@@ -37,7 +37,8 @@ return new class extends Migration
      * Setelah migration ini, target bisa dihapus (soft delete) lalu dibuat ulang untuk periode yang sama,
      * sehingga unique index lama tidak bisa dipasang ulang. Target soft-deleted yang bentrok dihapus permanen
      * (skema lama memang tidak bisa menyimpannya): yang aktif dipertahankan, kalau semuanya terhapus yang
-     * terbaru dipertahankan. Duplikat di antara target aktif tidak disentuh; rollback dihentikan lebih dulu.
+     * id-nya terbesar (dibuat paling akhir) dipertahankan. Duplikat di antara target aktif tidak disentuh;
+     * rollback dihentikan sebelum ada data yang diubah.
      */
     private function removeConflictingSoftDeletedTargets(): void
     {
@@ -73,6 +74,8 @@ return new class extends Migration
             );
         }
 
-        DB::table('carbon_targets')->whereIn('id', $toDelete)->delete();
+        if ($toDelete) {
+            DB::transaction(fn () => DB::table('carbon_targets')->whereIn('id', $toDelete)->delete());
+        }
     }
 };
