@@ -32,7 +32,15 @@ php artisan serve                   # http://127.0.0.1:8000
 ### Proses latar
 
 - **Queue** (`QUEUE_CONNECTION=database`): laporan dibuat oleh job, jadi jalankan `php artisan queue:work`. Untuk development atau E2E, `QUEUE_CONNECTION=sync` membuat laporan langsung selesai.
-- **Scheduler**: pasang cron `* * * * * php artisan schedule:run`. Scheduler membersihkan token Sanctum yang kedaluwarsa dan file temp import Laravel Excel setiap hari.
+- **Scheduler**: pasang cron `* * * * * php artisan schedule:run`. Setiap hari, scheduler membersihkan:
+  - token Sanctum yang kedaluwarsa,
+  - file temp import Laravel Excel,
+  - file lampiran dari entri yang sudah dihapus lebih dari 30 hari (`entries:purge-deleted-attachments`, bisa juga dijalankan manual dengan `--days=N`).
+
+### Batas & keamanan API
+
+- Endpoint ber-auth dibatasi **120 request per menit per user** (`API_RATE_LIMIT`), dan respons 429 berformat JSON. Login punya batas sendiri: 5 per menit per email + IP.
+- Semua respons mengirim `X-Content-Type-Options: nosniff`.
 
 ## Test
 
@@ -78,7 +86,9 @@ Spec E2E ada di repo frontend dan berjalan terhadap backend ini. Siapkan backend
 
 ```bash
 php artisan migrate:fresh --seed
-QUEUE_CONNECTION=sync php artisan serve --host=127.0.0.1 --port=8000
+QUEUE_CONNECTION=sync API_RATE_LIMIT=1000 php artisan serve --host=127.0.0.1 --port=8000
 ```
+
+`API_RATE_LIMIT=1000` diperlukan karena akun PM di E2E mencapai sekitar 120 request per menit, yaitu tepat di batas default. Perilaku rate limit sendiri diuji oleh PHPUnit (`ApiRateLimitTest`).
 
 Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-sketch/carbon-tracker-frontend#test-e2e-playwright).
