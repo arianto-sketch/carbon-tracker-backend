@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class UserService
@@ -38,24 +39,27 @@ class UserService
             ]);
         }
 
-        if ($user->isAdmin() && $user->is_active && ($deactivating || $demoting) && $this->activeAdminCount() <= 1) {
-            throw ValidationException::withMessages([
-                ($demoting ? 'role' : 'is_active') => ['Minimal harus ada satu admin aktif.'],
-            ]);
-        }
+        DB::transaction(function () use ($user, $data, $deactivating, $demoting) {
+            if ($deactivating || $demoting) {
+                // Kunci semua admin aktif: dua admin yang saling menurunkan/menonaktifkan secara
+                // bersamaan diproses bergiliran, jadi yang kedua melihat jumlah admin terbaru.
+                $activeAdminIds = User::where('role', 'admin')->where('is_active', true)->lockForUpdate()->pluck('id');
 
-        $user->update(Arr::only($data, ['name', 'role', 'is_active']));
+                if ($activeAdminIds->contains($user->id) && $activeAdminIds->count() <= 1) {
+                    throw ValidationException::withMessages([
+                        ($demoting ? 'role' : 'is_active') => ['Minimal harus ada satu admin aktif.'],
+                    ]);
+                }
+            }
 
-        // User nonaktif langsung kehilangan semua sesi
-        if ($deactivating) {
-            $user->tokens()->delete();
-        }
+            $user->update(Arr::only($data, ['name', 'role', 'is_active']));
+
+            // User nonaktif langsung kehilangan semua sesi
+            if ($deactivating) {
+                $user->tokens()->delete();
+            }
+        });
 
         return $user->fresh();
-    }
-
-    private function activeAdminCount(): int
-    {
-        return User::where('role', 'admin')->where('is_active', true)->count();
     }
 }

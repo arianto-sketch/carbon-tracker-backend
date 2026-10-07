@@ -113,7 +113,7 @@ class CarbonEntryController extends Controller
             return response()->json(['message' => 'Entri ini belum punya lampiran.'], 404);
         }
 
-        return $disk->download($entry->attachment_path, $entry->attachment_name);
+        return $disk->download($entry->attachment_path, $entry->attachmentDownloadName());
     }
 
     public function deleteAttachment(Request $request, int $projectId, int $id): JsonResponse

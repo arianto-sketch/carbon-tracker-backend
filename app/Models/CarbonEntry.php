@@ -92,4 +92,16 @@ class CarbonEntry extends Model
     {
         return $this->status === 'approved';
     }
+
+    /**
+     * Nama file saat diunduh: nama dari pengunggah, tapi ekstensinya diambil dari path tersimpan
+     * (hasil deteksi isi file). PDF yang diberi nama "struk.bat" terunduh sebagai "struk.pdf".
+     */
+    public function attachmentDownloadName(): string
+    {
+        $base = pathinfo((string) $this->attachment_name, PATHINFO_FILENAME) ?: 'lampiran';
+        $extension = pathinfo((string) $this->attachment_path, PATHINFO_EXTENSION);
+
+        return $extension !== '' ? "{$base}.{$extension}" : $base;
+    }
 }

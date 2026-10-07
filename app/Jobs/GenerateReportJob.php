@@ -36,7 +36,7 @@ class GenerateReportJob implements ShouldQueue
 
         // Error dibiarkan naik supaya queue bisa retry ($tries); status 'failed' diset di failed()
         Excel::store(
-            new CarbonReportExport($filters, $allowedProjectIds),
+            new CarbonReportExport($filters, $allowedProjectIds, $format),
             $filePath,
             'local',
             $format === 'csv' ? \Maatwebsite\Excel\Excel::CSV : \Maatwebsite\Excel\Excel::XLSX
