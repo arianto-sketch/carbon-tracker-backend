@@ -1,0 +1,29 @@
+name: Security audit
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - composer.json
+      - composer.lock
+      - .github/workflows/security-audit.yml
+  # Advisory baru bisa muncul tanpa ada perubahan kode
+  schedule:
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+jobs:
+  composer-audit:
+    name: composer audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: composer audit (lock file)
+        run: composer audit --locked --no-interaction

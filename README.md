@@ -82,3 +82,12 @@ QUEUE_CONNECTION=sync php artisan serve --host=127.0.0.1 --port=8000
 ```
 
 Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-sketch/carbon-tracker-frontend#test-e2e-playwright).
+
+## CI (GitHub Actions)
+
+| Workflow | Kapan jalan | Isi |
+|---|---|---|
+| `Tests` (`.github/workflows/tests.yml`) | Setiap PR dan push ke `master` | PHPUnit dengan PHP 8.3, di SQLite dan di MySQL 8.4 |
+| `Security audit` (`.github/workflows/security-audit.yml`) | PR yang mengubah `composer.json`/`composer.lock`, push ke `master`, dan **setiap Senin** | `composer audit --locked` |
+
+Audit dijadwalkan mingguan karena advisory baru bisa muncul walau kode tidak berubah. E2E dijalankan di CI repo frontend terhadap `master` backend ini.
