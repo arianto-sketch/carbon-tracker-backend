@@ -45,8 +45,8 @@ class CarbonEntryImportController extends Controller
 
     public function store(ImportCarbonEntriesRequest $request, int $projectId): JsonResponse
     {
-        $project = Project::findOrFail($projectId);
-        $this->authorizeProjectWrite($request, $project);
+        // Akses sudah dicek di ImportCarbonEntriesRequest::authorize(), sebelum validasi baris
+        $project = $request->project();
 
         $created = $this->service->commit($request->validated('rows'), $project, $request->user());
 

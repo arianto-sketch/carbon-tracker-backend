@@ -19,7 +19,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
     // Auth — protected
-    Route::middleware(['auth:sanctum', 'active'])->group(function () {
+    Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::post('/auth/register', [AuthController::class, 'register']);
         Route::get('/auth/me', [AuthController::class, 'me']);
@@ -30,7 +30,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('notifications')->group(function () {
             Route::get('/', [NotificationController::class, 'index']);
             Route::post('/read-all', [NotificationController::class, 'readAll']);
-            Route::post('/{id}/read', [NotificationController::class, 'read']);
+            Route::post('/{id}/read', [NotificationController::class, 'read'])->whereUuid('id');
         });
 
         // Manajemen user (admin)

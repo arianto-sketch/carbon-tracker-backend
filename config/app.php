@@ -71,6 +71,9 @@ return [
     // Timestamp tetap disimpan dalam 'timezone' di atas.
     'business_timezone' => env('APP_BUSINESS_TIMEZONE', 'Asia/Jakarta'),
 
+    // Batas request per menit per user untuk endpoint API ber-auth
+    'api_rate_limit' => (int) env('API_RATE_LIMIT', 120),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

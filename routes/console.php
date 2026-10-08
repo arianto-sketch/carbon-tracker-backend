@@ -18,6 +18,9 @@ Schedule::call(function () {
     }
 })->daily()->name('cleanup-laravel-excel-temp');
 
+// File lampiran dari entri yang sudah dihapus lebih dari 30 hari
+Schedule::command('entries:purge-deleted-attachments')->daily();
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

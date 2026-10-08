@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -207,6 +208,20 @@ class EntryImportTest extends TestCase
         ]])->assertStatus(422);
 
         $this->assertSame(0, CarbonEntry::count());
+    }
+
+    public function test_non_member_is_rejected_before_rows_are_validated(): void
+    {
+        $rows = array_fill(0, 50, ['entry_date' => '2026-01-01', 'emission_factor_id' => 999999, 'quantity' => 1]);
+
+        DB::enableQueryLog();
+        $this->actingAs(User::factory()->create(), 'sanctum')
+            ->postJson($this->base(), ['rows' => $rows])
+            ->assertForbidden();
+
+        // Validasi baris (query exists per baris) tidak boleh jalan sebelum akses dicek
+        $this->assertLessThan(10, count(DB::getQueryLog()));
+        DB::disableQueryLog();
     }
 
     public function test_viewer_cannot_import(): void
