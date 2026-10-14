@@ -52,9 +52,9 @@ trait BuildsCarbonData
         return $entry->fresh();
     }
 
-    protected function makeApprovedEntry(Project $project, User $creator, float $quantity = 100, string $date = '2026-03-15'): CarbonEntry
+    protected function makeApprovedEntry(Project $project, User $creator, float $quantity = 100, string $date = '2026-03-15', string $factorSlug = 'gasoline_vehicle'): CarbonEntry
     {
-        $factor = $this->gasolineFactor();
+        $factor = EmissionFactor::where('slug', $factorSlug)->firstOrFail();
 
         return CarbonEntry::create([
             'project_id' => $project->id,
