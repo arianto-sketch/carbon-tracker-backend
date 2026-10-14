@@ -6,6 +6,7 @@ use App\Models\CarbonEntry;
 use App\Models\CarbonTarget;
 use App\Models\Project;
 use App\Models\User;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
@@ -73,14 +74,29 @@ class CarbonTargetService
             ->whereHas('carbonTargets', fn ($q) => $q->where('period_year', $year))
             ->get();
 
-        return $projects
-            ->flatMap(fn (Project $project) => $this->getProgress($project)
-                ->filter(fn (array $p) => (int) $p['period_year'] === $year && $p['percentage_used'] >= $threshold)
-                ->map(fn (array $p) => $p + [
-                    'project_id'   => $project->id,
-                    'project_name' => $project->name,
-                    'level'        => $p['percentage_used'] >= 100 ? 'exceeded' : 'warning',
-                ]))
+        if ($projects->isEmpty()) {
+            return [];
+        }
+
+        // Semua project sekaligus: jumlah query tetap, berapa pun banyaknya project
+        $projects = $projects->keyBy('id');
+        // Urutan per project lalu target, supaya baris dengan persentase sama tetap berurutan stabil
+        $targets = CarbonTarget::with('category')
+            ->whereIn('project_id', $projects->keys())
+            ->where('period_year', $year)
+            ->orderBy('project_id')
+            ->orderBy('id')
+            ->get();
+        $totals = $this->approvedTotalsByMonth($projects->keys()->all(), [$year])->groupBy('project_id');
+
+        return $targets
+            ->map(fn (CarbonTarget $target) => $this->progressRow($target, $totals->get($target->project_id, collect())))
+            ->filter(fn (array $p) => $p['percentage_used'] >= $threshold)
+            ->map(fn (array $p) => Arr::except($p, 'project_id') + [
+                'project_id'   => $p['project_id'],
+                'project_name' => $projects[$p['project_id']]->name,
+                'level'        => $p['percentage_used'] >= 100 ? 'exceeded' : 'warning',
+            ])
             ->sortByDesc('percentage_used')
             ->values()
             ->all();
@@ -92,32 +108,36 @@ class CarbonTargetService
             ->where('project_id', $project->id)
             ->get();
 
-        $totals = $this->approvedTotalsByMonth($project, $targets->pluck('period_year')->unique()->values()->all());
+        $totals = $this->approvedTotalsByMonth([$project->id], $targets->pluck('period_year')->unique()->values()->all());
 
-        return $targets->map(function (CarbonTarget $target) use ($totals) {
-            $actual = $this->getActualForTarget($target, $totals);
+        return $targets->map(fn (CarbonTarget $target) => Arr::except($this->progressRow($target, $totals), 'project_id'));
+    }
 
-            $percentage = $target->target_co2e_kg > 0
-                ? round(($actual / $target->target_co2e_kg) * 100, 2)
-                : 0;
+    private function progressRow(CarbonTarget $target, Collection $totals): array
+    {
+        $actual = $this->getActualForTarget($target, $totals);
 
-            $remaining = max(0, $target->target_co2e_kg - $actual);
+        $percentage = $target->target_co2e_kg > 0
+            ? round(($actual / $target->target_co2e_kg) * 100, 2)
+            : 0;
 
-            return [
-                'target_id'             => $target->id,
-                'category'              => $target->category?->name ?? 'Semua Kategori',
-                'period_type'           => $target->period_type,
-                'period_year'           => $target->period_year,
-                'period_value'          => $target->period_value,
-                'target_co2e_kg'        => (float) $target->target_co2e_kg,
-                'actual_co2e_kg'        => (float) $actual,
-                'remaining_co2e_kg'     => (float) $remaining,
-                'percentage_used'       => $percentage,
-                'is_exceeded'           => $actual > $target->target_co2e_kg,
-                'baseline_co2e_kg'      => $target->baseline_co2e_kg ? (float) $target->baseline_co2e_kg : null,
-                'reduction_percentage'  => $target->reduction_percentage ? (float) $target->reduction_percentage : null,
-            ];
-        });
+        $remaining = max(0, $target->target_co2e_kg - $actual);
+
+        return [
+            'target_id'             => $target->id,
+            'project_id'            => $target->project_id,
+            'category'              => $target->category?->name ?? 'Semua Kategori',
+            'period_type'           => $target->period_type,
+            'period_year'           => $target->period_year,
+            'period_value'          => $target->period_value,
+            'target_co2e_kg'        => (float) $target->target_co2e_kg,
+            'actual_co2e_kg'        => (float) $actual,
+            'remaining_co2e_kg'     => (float) $remaining,
+            'percentage_used'       => $percentage,
+            'is_exceeded'           => $actual > $target->target_co2e_kg,
+            'baseline_co2e_kg'      => $target->baseline_co2e_kg ? (float) $target->baseline_co2e_kg : null,
+            'reduction_percentage'  => $target->reduction_percentage ? (float) $target->reduction_percentage : null,
+        ];
     }
 
     /**
@@ -145,22 +165,23 @@ class CarbonTargetService
     }
 
     /**
-     * Total emisi approved project per kategori + tahun + bulan dalam satu query, supaya
-     * progress semua target dihitung tanpa 1 query SUM per target.
+     * Total emisi approved per project + kategori + tahun + bulan dalam satu query, supaya
+     * progress semua target dihitung tanpa 1 query SUM per target (atau per project).
      *
+     * @param  array<int>  $projectIds
      * @param  array<int>  $years
      */
-    private function approvedTotalsByMonth(Project $project, array $years): Collection
+    private function approvedTotalsByMonth(array $projectIds, array $years): Collection
     {
-        if ($years === []) {
+        if ($projectIds === [] || $years === []) {
             return collect();
         }
 
-        return CarbonEntry::where('project_id', $project->id)
+        return CarbonEntry::whereIn('project_id', $projectIds)
             ->where('status', 'approved')
             ->whereIn('period_year', $years)
-            ->selectRaw('category_id, period_year, period_month, SUM(co2e_kg) as total_co2e_kg')
-            ->groupBy('category_id', 'period_year', 'period_month')
+            ->selectRaw('project_id, category_id, period_year, period_month, SUM(co2e_kg) as total_co2e_kg')
+            ->groupBy('project_id', 'category_id', 'period_year', 'period_month')
             ->toBase()
             ->get();
     }

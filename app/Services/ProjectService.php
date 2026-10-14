@@ -6,7 +6,9 @@ use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
 use App\Support\Like;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -68,28 +70,33 @@ class ProjectService
         $project->delete();
     }
 
-    public function addMember(Project $project, int $userId, string $role = 'member'): ProjectMember
+    /** @param  User  $actor  pengelola yang meminta (owner project atau admin), dicek ulang di dalam transaksi */
+    public function addMember(Project $project, int $userId, string $role, User $actor): ProjectMember
     {
-        if ($project->hasUser($userId)) {
-            throw ValidationException::withMessages([
-                'user_id' => ['User sudah menjadi member project ini.'],
-            ]);
-        }
+        return DB::transaction(function () use ($project, $userId, $role, $actor) {
+            $this->ensureCanManageMembers($actor, $this->lockedOwners($project));
 
-        return ProjectMember::create([
-            'project_id' => $project->id,
-            'user_id' => $userId,
-            'role' => $role,
-        ]);
+            if ($project->hasUser($userId)) {
+                throw ValidationException::withMessages([
+                    'user_id' => ['User sudah menjadi member project ini.'],
+                ]);
+            }
+
+            return ProjectMember::create([
+                'project_id' => $project->id,
+                'user_id' => $userId,
+                'role' => $role,
+            ]);
+        });
     }
 
-    public function updateMemberRole(Project $project, int $userId, string $role): ProjectMember
+    public function updateMemberRole(Project $project, int $userId, string $role, User $actor): ProjectMember
     {
-        return DB::transaction(function () use ($project, $userId, $role) {
+        return DB::transaction(function () use ($project, $userId, $role, $actor) {
             // Kunci semua owner dulu: dua owner yang saling menurunkan secara bersamaan diproses
             // bergiliran, jadi yang kedua melihat jumlah owner terbaru.
-            $lockedOwners = ProjectMember::where('project_id', $project->id)->where('role', 'owner')
-                ->orderBy('id')->lockForUpdate()->get(['id']);
+            $lockedOwners = $this->lockedOwners($project);
+            $this->ensureCanManageMembers($actor, $lockedOwners);
             $member = $this->lockedMember($project, $userId);
 
             if ($member->role === 'owner' && $role !== 'owner' && $lockedOwners->count() <= 1) {
@@ -104,9 +111,11 @@ class ProjectService
         });
     }
 
-    public function removeMember(Project $project, int $userId): void
+    public function removeMember(Project $project, int $userId, User $actor): void
     {
-        DB::transaction(function () use ($project, $userId) {
+        DB::transaction(function () use ($project, $userId, $actor) {
+            $this->ensureCanManageMembers($actor, $this->lockedOwners($project));
+
             // Role dicek pada baris terkunci: anggota yang baru saja dijadikan owner tidak ikut terhapus
             $member = $this->lockedMember($project, $userId);
 
@@ -118,6 +127,32 @@ class ProjectService
 
             $member->delete();
         });
+    }
+
+    /**
+     * Semua owner project, dikunci (wajib di dalam transaksi). Baris project dikunci lebih dulu sebagai
+     * mutex: operasi member pada project yang sama mengantre di sini, sebelum menyentuh baris member,
+     * sehingga gap lock InnoDB (mis. tambah member ke project tanpa owner) tidak saling deadlock.
+     */
+    private function lockedOwners(Project $project): Collection
+    {
+        Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
+
+        return ProjectMember::where('project_id', $project->id)->where('role', 'owner')
+            ->orderBy('id')->lockForUpdate()->get(['id', 'user_id']);
+    }
+
+    /**
+     * Cek pengelola member diulang pada baris owner yang terkunci: owner yang diturunkan request lain
+     * setelah lolos cek di controller tidak bisa lagi mengubah member.
+     */
+    private function ensureCanManageMembers(User $actor, Collection $lockedOwners): void
+    {
+        if ($actor->isAdmin() || $lockedOwners->contains('user_id', $actor->id)) {
+            return;
+        }
+
+        throw new AuthorizationException('Hanya owner atau admin yang bisa mengelola member project.');
     }
 
     private function lockedMember(Project $project, int $userId): ProjectMember

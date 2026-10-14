@@ -3,6 +3,7 @@
 namespace App\Exports;
 
 use App\Models\CarbonEntry;
+use App\Models\Project;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
@@ -33,9 +34,9 @@ class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, Wi
             ->where('status', 'approved')
             ->orderBy('entry_date');
 
-        if ($this->allowedProjectIds !== null) {
-            $query->whereIn('project_id', $this->allowedProjectIds);
-        }
+        // Admin (null): semua project yang masih ada. Entri dari project yang sudah dihapus tidak ikut,
+        // sama dengan dashboard.
+        $query->whereIn('project_id', $this->allowedProjectIds ?? Project::query()->select('id'));
 
         if (! empty($this->filters['project_ids'])) {
             $query->whereIn('project_id', $this->filters['project_ids']);
