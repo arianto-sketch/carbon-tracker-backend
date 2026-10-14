@@ -103,4 +103,4 @@ Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-ske
 
 - Audit dijadwalkan mingguan karena advisory baru bisa muncul walau kode tidak berubah.
 - E2E jalan di kedua arah: repo ini menguji backend terhadap frontend `main`, dan CI repo frontend menguji frontend terhadap `master` backend. Run E2E harian menangkap perubahan di repo frontend yang memengaruhi backend.
-- Branch protection `master` mewajibkan check `PHPUnit (sqlite)` dan `PHPUnit (mysql)` lulus sebelum merge. Dependabot alerts dan PR security update otomatis aktif.
+- Branch protection `master` mewajibkan check `PHPUnit (sqlite)`, `PHPUnit (mysql)`, dan `E2E (Playwright)` lulus sebelum merge, dan push langsung ke `master` ditolak. Dependabot alerts dan PR security update otomatis aktif.
