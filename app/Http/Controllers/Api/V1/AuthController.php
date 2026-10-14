@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Services\AuthService;
@@ -39,16 +38,6 @@ class AuthController extends Controller
         $this->authService->logout($request->user());
 
         return response()->json(['message' => 'Logout berhasil.']);
-    }
-
-    public function register(RegisterRequest $request): JsonResponse
-    {
-        $user = $this->authService->register($request->validated());
-
-        return response()->json([
-            'data' => new UserResource($user),
-            'message' => 'User berhasil dibuat.',
-        ], 201);
     }
 
     public function me(Request $request): JsonResponse
