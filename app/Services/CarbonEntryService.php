@@ -352,7 +352,9 @@ class CarbonEntryService
 
     /**
      * Notifikasi bersifat best-effort: kegagalan dicatat di log tanpa membatalkan
-     * perubahan status yang sudah tersimpan.
+     * perubahan status yang sudah tersimpan. Yang tertangkap di sini: notifikasi in-app (sinkron)
+     * dan gagal memasukkan email ke antrean; gagal kirim email terjadi di worker (dicoba ulang,
+     * lalu tercatat di failed_jobs).
      */
     private function sendSafely(iterable $users, EntryWorkflowNotification $notification): void
     {

@@ -108,6 +108,27 @@ class EmailNotificationTest extends TestCase
         $this->assertStringContainsString('salin dan tempel URL berikut', $html);
     }
 
+    public function test_reviewer_text_cannot_inject_links_into_the_email(): void
+    {
+        $entry = $this->makeEntry($this->project, $this->member, 'submitted');
+
+        $html = (string) (new EntryWorkflowNotification('entry_rejected', $entry, $this->owner, 'Lihat [panduan](https://evil.test) **segera**'))
+            ->toMail($this->member)->render();
+
+        $this->assertStringNotContainsString('href="https://evil.test"', $html);
+        $this->assertStringNotContainsString('<strong>segera</strong>', $html);
+        $this->assertStringContainsString('[panduan](https://evil.test)', $html);
+    }
+
+    public function test_queued_email_is_dropped_when_the_entry_is_gone_and_waits_for_commit(): void
+    {
+        $notification = new EntryWorkflowNotification('entry_approved', $this->makeEntry($this->project, $this->member), $this->owner);
+
+        $this->assertTrue($notification->deleteWhenMissingModels);
+        $this->assertTrue($notification->afterCommit);
+        $this->assertGreaterThan(1, $notification->tries);
+    }
+
     public function test_user_can_turn_email_notifications_off_from_profile(): void
     {
         $this->actingAs($this->member, 'sanctum')->getJson('/api/v1/auth/me')

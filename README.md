@@ -31,7 +31,8 @@ php artisan serve                   # http://127.0.0.1:8000
 
 ### Proses latar
 
-- **Queue** (`QUEUE_CONNECTION=database`): laporan dibuat oleh job, jadi jalankan `php artisan queue:work`. Untuk development atau E2E, `QUEUE_CONNECTION=sync` membuat laporan langsung selesai.
+- **Queue** (`QUEUE_CONNECTION=database`): laporan dan email notifikasi approval dibuat oleh job, jadi jalankan `php artisan queue:work`. Tanpa worker, laporan tidak selesai dan email tidak terkirim (notifikasi in-app tetap muncul). Untuk development atau E2E, `QUEUE_CONNECTION=sync` membuat keduanya langsung diproses.
+- **Email**: isi `MAIL_*` dan `FRONTEND_URL` (tautan "Buka project" di email). User bisa mematikan email di halaman Profil.
 - **Scheduler**: pasang cron `* * * * * php artisan schedule:run`. Setiap hari, scheduler membersihkan:
   - token Sanctum yang kedaluwarsa,
   - file temp import Laravel Excel,

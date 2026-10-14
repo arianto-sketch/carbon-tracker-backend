@@ -7,6 +7,7 @@ use App\Models\EmissionCategory;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
+use Illuminate\Support\Arr;
 
 class DashboardService
 {
@@ -164,10 +165,7 @@ class DashboardService
                 ->where('period_month', '<=', $untilMonth);
 
             $this->applyUserScope($query, $user);
-
-            if (isset($filters['project_id'])) {
-                $query->where('project_id', $filters['project_id']);
-            }
+            $this->applyFilters($query, Arr::only($filters, ['project_id']));
 
             return (float) $query->sum('co2e_kg');
         };
