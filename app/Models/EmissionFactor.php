@@ -8,8 +8,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EmissionFactor extends Model
 {
+    /** Scope GHG Protocol: 1 = emisi langsung, 2 = energi yang dibeli, 3 = tidak langsung lainnya */
+    public const SCOPES = [1, 2, 3];
+
     protected $fillable = [
         'category_id',
+        'scope',
         'name',
         'slug',
         'description',
@@ -27,6 +31,7 @@ class EmissionFactor extends Model
     {
         return [
             'factor_value' => 'decimal:8',
+            'scope' => 'integer',
             'is_active' => 'boolean',
         ];
     }

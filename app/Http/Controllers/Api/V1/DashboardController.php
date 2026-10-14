@@ -53,6 +53,26 @@ class DashboardController extends Controller
         return response()->json(['data' => $data]);
     }
 
+    public function scopeBreakdown(Request $request): JsonResponse
+    {
+        $data = $this->service->getScopeBreakdown(
+            $request->user(),
+            $this->filters($request, ['period_year', 'period_month', 'project_id'])
+        );
+
+        return response()->json(['data' => $data]);
+    }
+
+    public function outlook(Request $request): JsonResponse
+    {
+        $data = $this->service->getOutlook(
+            $request->user(),
+            $this->filters($request, ['period_year', 'project_id'])
+        );
+
+        return response()->json(['data' => $data]);
+    }
+
     public function topEntries(Request $request): JsonResponse
     {
         $filters = $this->filters($request, ['period_year', 'period_month', 'project_id', 'limit']);

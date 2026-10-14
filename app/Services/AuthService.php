@@ -52,10 +52,17 @@ class AuthService
 
     public function updateProfile(User $user, array $data): User
     {
-        $user->update(array_filter([
+        $attributes = array_filter([
             'name' => $data['name'] ?? null,
             'avatar' => $data['avatar'] ?? null,
-        ]));
+        ]);
+
+        // Di luar array_filter: nilai false (mematikan email) harus tetap tersimpan
+        if (array_key_exists('email_notifications', $data)) {
+            $attributes['email_notifications'] = (bool) $data['email_notifications'];
+        }
+
+        $user->update($attributes);
 
         return $user->fresh();
     }

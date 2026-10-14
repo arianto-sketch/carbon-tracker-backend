@@ -120,15 +120,15 @@ class GhgScopeTest extends TestCase
             ->assertOk()
             ->assertJsonCount(3, 'data')
             ->assertJsonPath('data.0.scope', 1)
-            ->assertJsonPath('data.0.total_co2e_kg', 231.0)
+            ->assertJsonPath('data.0.total_co2e_kg', 231)
             ->assertJsonPath('data.0.entry_count', 1)
             ->assertJsonPath('data.0.percentage', 46.95)
             ->assertJsonPath('data.1.scope', 2)
-            ->assertJsonPath('data.1.total_co2e_kg', 261.0)
+            ->assertJsonPath('data.1.total_co2e_kg', 261)
             ->assertJsonPath('data.1.percentage', 53.05)
             ->assertJsonPath('data.2.scope', 3)
-            ->assertJsonPath('data.2.total_co2e_kg', 0.0)
-            ->assertJsonPath('data.2.percentage', 0.0);
+            ->assertJsonPath('data.2.total_co2e_kg', 0)
+            ->assertJsonPath('data.2.percentage', 0);
     }
 
     public function test_scope_breakdown_only_counts_projects_the_user_can_see(): void
@@ -137,7 +137,7 @@ class GhgScopeTest extends TestCase
 
         $this->actingAs(User::factory()->create(), 'sanctum')->getJson('/api/v1/dashboard/scope-breakdown')
             ->assertOk()
-            ->assertJsonPath('data.0.total_co2e_kg', 0.0);
+            ->assertJsonPath('data.0.total_co2e_kg', 0);
     }
 
     public function test_export_lists_the_scope_of_each_entry_in_the_last_column(): void

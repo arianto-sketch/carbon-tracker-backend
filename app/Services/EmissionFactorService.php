@@ -34,6 +34,8 @@ class EmissionFactorService
     {
         return EmissionFactor::create([
             'category_id' => $data['category_id'],
+            // Klien yang belum mengirim scope: Scope 3 (emisi tidak langsung lainnya)
+            'scope' => $data['scope'] ?? 3,
             'name' => $data['name'],
             'slug' => $data['slug'],
             'description' => $data['description'] ?? null,
@@ -51,6 +53,8 @@ class EmissionFactorService
     {
         $factor->update([
             'category_id' => $data['category_id'],
+            // Entri yang sudah tercatat tidak ikut berubah: scope-nya disalin saat entri dibuat
+            'scope' => $data['scope'] ?? $factor->scope,
             'name' => $data['name'],
             'slug' => $data['slug'],
             'description' => $data['description'] ?? null,

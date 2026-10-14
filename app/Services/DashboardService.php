@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CarbonEntry;
 use App\Models\EmissionCategory;
+use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
 
@@ -108,6 +109,87 @@ class DashboardService
                 ? round(($row->total_co2e_kg / $grandTotal) * 100, 2)
                 : 0,
         ])->sortByDesc('total_co2e_kg')->values()->toArray();
+    }
+
+    public function getScopeBreakdown(User $user, array $filters = []): array
+    {
+        $query = CarbonEntry::where('status', 'approved')
+            ->selectRaw('scope, SUM(co2e_kg) as total_co2e_kg, COUNT(id) as entry_count')
+            ->groupBy('scope');
+
+        $this->applyUserScope($query, $user);
+        $this->applyFilters($query, $filters);
+
+        // Baris agregat (bukan model): SUM/COUNT per scope (scope disalin ke entri saat dicatat)
+        $rows = $query->toBase()->get()->keyBy('scope');
+        $grandTotal = (float) $rows->sum('total_co2e_kg');
+
+        // Ketiga scope selalu ada (nol bila belum ada entri) supaya grafik dan laporan konsisten
+        return collect(EmissionFactor::SCOPES)->map(function (int $scope) use ($rows, $grandTotal) {
+            $total = (float) ($rows[$scope]->total_co2e_kg ?? 0);
+
+            return [
+                'scope'         => $scope,
+                'label'         => "Scope {$scope}",
+                'total_co2e_kg' => $total,
+                'entry_count'   => (int) ($rows[$scope]->entry_count ?? 0),
+                'percentage'    => $grandTotal > 0 ? round($total / $grandTotal * 100, 2) : 0.0,
+            ];
+        })->all();
+    }
+
+    /**
+     * Proyeksi emisi setahun dengan run-rate linear (total s.d. bulan berjalan ÷ jumlah bulan × 12)
+     * dan perbandingan dengan periode yang sama tahun sebelumnya (Jan s.d. bulan yang sama).
+     */
+    public function getOutlook(User $user, array $filters = []): array
+    {
+        $now = now(config('app.business_timezone'));
+        $year = (int) ($filters['period_year'] ?? $now->year);
+
+        // Tahun yang sudah lewat dihitung penuh; tahun yang belum dimulai belum punya data
+        $monthsElapsed = match (true) {
+            $year < $now->year => 12,
+            $year > $now->year => 0,
+            default            => $now->month,
+        };
+
+        $total = function (int $year, int $untilMonth) use ($user, $filters): float {
+            if ($untilMonth === 0) {
+                return 0.0;
+            }
+
+            $query = CarbonEntry::where('status', 'approved')
+                ->where('period_year', $year)
+                ->where('period_month', '<=', $untilMonth);
+
+            $this->applyUserScope($query, $user);
+
+            if (isset($filters['project_id'])) {
+                $query->where('project_id', $filters['project_id']);
+            }
+
+            return (float) $query->sum('co2e_kg');
+        };
+
+        $ytd = $total($year, $monthsElapsed);
+        $previousSamePeriod = $total($year - 1, $monthsElapsed);
+
+        return [
+            'year'                     => $year,
+            'months_elapsed'           => $monthsElapsed,
+            'ytd_co2e_kg'              => $ytd,
+            'projected_annual_co2e_kg' => $monthsElapsed > 0 ? round($ytd / $monthsElapsed * 12, 4) : null,
+            'previous_year'            => [
+                'year'                => $year - 1,
+                'same_period_co2e_kg' => $previousSamePeriod,
+                'full_year_co2e_kg'   => $total($year - 1, 12),
+            ],
+            // Tidak terdefinisi bila periode pembanding nol
+            'yoy_change_pct'           => $previousSamePeriod > 0
+                ? round(($ytd - $previousSamePeriod) / $previousSamePeriod * 100, 2)
+                : null,
+        ];
     }
 
     public function getTopEntries(User $user, array $filters = [], int $limit = 5): array

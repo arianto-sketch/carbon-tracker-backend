@@ -13,6 +13,11 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    /** Sama dengan default kolom, supaya model yang baru dibuat (belum dimuat ulang) sudah benar */
+    protected $attributes = [
+        'email_notifications' => true,
+    ];
+
     protected $fillable = [
         'name',
         'email',
@@ -20,6 +25,7 @@ class User extends Authenticatable
         'role',
         'avatar',
         'is_active',
+        'email_notifications',
     ];
 
     protected $hidden = [
@@ -33,6 +39,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'email_notifications' => 'boolean',
         ];
     }
 

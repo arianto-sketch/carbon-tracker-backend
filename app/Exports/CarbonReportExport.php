@@ -80,6 +80,8 @@ class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, Sh
             'Vendor / Supplier',
             'Tipe Aktivitas',
             'Di-input oleh',
+            // Kolom baru ditambahkan di akhir supaya rumus/makro yang merujuk kolom lama tetap benar
+            'Scope GHG',
         ];
     }
 
@@ -100,6 +102,7 @@ class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, Sh
             $this->text($entry->vendor_name),
             $this->text($entry->activity_type),
             $this->text($entry->createdBy?->name),
+            'Scope '.$entry->scope,
         ];
     }
 

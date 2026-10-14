@@ -189,6 +189,7 @@ class CarbonEntryService
             'project_id'            => $project->id,
             'emission_factor_id'    => $factor->id,
             'category_id'           => $factor->category_id,
+            'scope'                 => $factor->scope,
             'entry_date'            => $date->toDateString(),
             'period_month'          => $date->month,
             'period_year'           => $date->year,
@@ -220,6 +221,7 @@ class CarbonEntryService
             $entry->update([
                 'emission_factor_id'    => $factor->id,
                 'category_id'           => $factor->category_id,
+                'scope'                 => $factor->scope,
                 'entry_date'            => $date->toDateString(),
                 'period_month'          => $date->month,
                 'period_year'           => $date->year,

@@ -60,6 +60,7 @@ trait BuildsCarbonData
             'project_id' => $project->id,
             'emission_factor_id' => $factor->id,
             'category_id' => $factor->category_id,
+            'scope' => $factor->scope,
             'entry_date' => $date,
             'period_month' => (int) substr($date, 5, 2),
             'period_year' => (int) substr($date, 0, 4),
