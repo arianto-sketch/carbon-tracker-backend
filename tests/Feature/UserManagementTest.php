@@ -145,6 +145,14 @@ class UserManagementTest extends TestCase
         $this->assertSame('admin', $this->admin->fresh()->role);
     }
 
+    public function test_duplicate_register_endpoint_is_removed(): void
+    {
+        // Pembuatan user cukup lewat POST /users (validasi dan aturan admin yang sama)
+        $this->actingAs($this->admin, 'sanctum')->postJson('/api/v1/auth/register', [
+            'name' => 'X', 'email' => 'x@example.test', 'password' => 'rahasia123', 'password_confirmation' => 'rahasia123',
+        ])->assertNotFound();
+    }
+
     public function test_deactivated_user_loses_tokens_immediately(): void
     {
         $user = User::factory()->create();
