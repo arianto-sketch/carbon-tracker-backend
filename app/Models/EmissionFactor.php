@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EmissionFactor extends Model
 {
@@ -29,17 +31,20 @@ class EmissionFactor extends Model
         ];
     }
 
-    public function category()
+    /** @return BelongsTo<EmissionCategory, $this> */
+    public function category(): BelongsTo
     {
         return $this->belongsTo(EmissionCategory::class, 'category_id');
     }
 
-    public function createdBy()
+    /** @return BelongsTo<User, $this> */
+    public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function carbonEntries()
+    /** @return HasMany<CarbonEntry, $this> */
+    public function carbonEntries(): HasMany
     {
         return $this->hasMany(CarbonEntry::class, 'emission_factor_id');
     }

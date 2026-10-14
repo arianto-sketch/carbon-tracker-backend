@@ -44,6 +44,16 @@ php artisan serve                   # http://127.0.0.1:8000
 
 ## Test
 
+### Format & analisis statis
+
+```bash
+composer lint        # Pint (preset laravel; perataan => di array dipertahankan, lihat pint.json)
+vendor/bin/pint      # merapikan format otomatis
+composer analyse     # Larastan level 5 (phpstan.neon)
+```
+
+Relasi model wajib punya return type dan generic, misalnya `/** @return BelongsTo<Project, $this> */`. Resource API diberi `@mixin` ke modelnya, supaya Larastan mengenali properti dan relasinya.
+
 ### PHPUnit (default: SQLite in-memory)
 
 ```bash
@@ -97,7 +107,7 @@ Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-ske
 
 | Workflow | Kapan jalan | Isi |
 |---|---|---|
-| `Tests` (`.github/workflows/tests.yml`) | Setiap PR dan push ke `master` | PHPUnit dengan PHP 8.3, di SQLite dan di MySQL 8.4 |
+| `Tests` (`.github/workflows/tests.yml`) | Setiap PR dan push ke `master` | Pint + Larastan, lalu PHPUnit dengan PHP 8.3 di SQLite dan di MySQL 8.4 |
 | `E2E` (`.github/workflows/e2e.yml`) | Setiap PR dan push ke `master`, dan **setiap hari** | E2E Playwright frontend `main` terhadap backend dari PR/branch ini (MySQL 8.4) |
 | `Security audit` (`.github/workflows/security-audit.yml`) | PR yang mengubah `composer.json`/`composer.lock`, push ke `master`, dan **setiap Senin** | `composer audit --locked` |
 

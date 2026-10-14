@@ -3,9 +3,9 @@
 namespace App\Services;
 
 use App\Models\CarbonEntry;
+use App\Models\EmissionCategory;
 use App\Models\Project;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
@@ -50,8 +50,9 @@ class DashboardService
             'name'          => $project->name,
             'code'          => $project->code,
             'status'        => $project->status,
-            'total_co2e_kg' => (float) $project->total_co2e_kg,
-            'entry_count'   => (int) $project->entry_count,
+            // Atribut hasil withSum/withCount (alias), bukan kolom tabel projects
+            'total_co2e_kg' => (float) $project->getAttribute('total_co2e_kg'),
+            'entry_count'   => (int) $project->getAttribute('entry_count'),
         ])->sortByDesc('total_co2e_kg')->values()->toArray();
     }
 
@@ -71,14 +72,15 @@ class DashboardService
             $query->where('project_id', $filters['project_id']);
         }
 
-        $rows = $query->get()->keyBy('period_month');
+        // Baris agregat (bukan model): SUM/COUNT per bulan
+        $rows = $query->toBase()->get()->keyBy('period_month');
 
         // Pastikan semua 12 bulan muncul meski data 0
         return collect(range(1, 12))->map(fn ($month) => [
             'month'         => $month,
             'month_label'   => $this->monthLabel($month),
-            'total_co2e_kg' => (float) ($rows[$month]?->total_co2e_kg ?? 0),
-            'entry_count'   => (int) ($rows[$month]?->entry_count ?? 0),
+            'total_co2e_kg' => (float) ($rows[$month]->total_co2e_kg ?? 0),
+            'entry_count'   => (int) ($rows[$month]->entry_count ?? 0),
         ])->values()->toArray();
     }
 
@@ -86,19 +88,20 @@ class DashboardService
     {
         $query = CarbonEntry::where('status', 'approved')
             ->selectRaw('category_id, SUM(co2e_kg) as total_co2e_kg, COUNT(id) as entry_count')
-            ->groupBy('category_id')
-            ->with('category');
+            ->groupBy('category_id');
 
         $this->applyUserScope($query, $user);
         $this->applyFilters($query, $filters);
 
-        $rows = $query->get();
+        // Baris agregat (bukan model): nama kategori dimuat sekali lewat query terpisah
+        $rows = $query->toBase()->get();
+        $categories = EmissionCategory::whereIn('id', $rows->pluck('category_id'))->get()->keyBy('id');
         $grandTotal = $rows->sum('total_co2e_kg');
 
         return $rows->map(fn ($row) => [
             'category_id'   => $row->category_id,
-            'category_name' => $row->category?->name ?? 'Unknown',
-            'category_slug' => $row->category?->slug ?? '-',
+            'category_name' => $categories[$row->category_id]->name ?? 'Unknown',
+            'category_slug' => $categories[$row->category_id]->slug ?? '-',
             'total_co2e_kg' => (float) $row->total_co2e_kg,
             'entry_count'   => (int) $row->entry_count,
             'percentage'    => $grandTotal > 0
@@ -125,7 +128,7 @@ class DashboardService
             'quantity'      => (float) $entry->quantity,
             'source_unit'   => $entry->source_unit,
             'co2e_kg'       => (float) $entry->co2e_kg,
-            'entry_date'    => $entry->entry_date?->toDateString(),
+            'entry_date'    => $entry->entry_date->toDateString(),
         ])->toArray();
     }
 
@@ -163,14 +166,14 @@ class DashboardService
         $month = $filters['period_month'] ?? null;
 
         if ($month) {
-            return $this->monthLabel($month) . ' ' . $year;
+            return $this->monthLabel($month).' '.$year;
         }
 
-        return 'YTD ' . $year;
+        return 'YTD '.$year;
     }
 
     private function monthLabel(int $month): string
     {
-        return ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'][$month - 1];
+        return ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'][$month - 1];
     }
 }

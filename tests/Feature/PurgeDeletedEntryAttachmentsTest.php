@@ -6,9 +6,9 @@ use App\Models\CarbonEntry;
 use App\Models\User;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Filesystem\Filesystem;
-use Mockery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\Concerns\BuildsCarbonData;
 use Tests\TestCase;
 

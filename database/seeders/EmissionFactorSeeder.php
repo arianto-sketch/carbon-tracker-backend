@@ -12,7 +12,8 @@ class EmissionFactorSeeder extends Seeder
     public function run(): void
     {
         $admin = User::where('role', 'admin')->first();
-        $adminId = $admin?->id ?? 1;
+        // Admin bisa belum ada (seeder dijalankan sendiri); `??` sudah aman bila $admin null
+        $adminId = $admin->id ?? 1;
 
         $energy = EmissionCategory::where('slug', 'energy')->first();
         $activity = EmissionCategory::where('slug', 'activity')->first();

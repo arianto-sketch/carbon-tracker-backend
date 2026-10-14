@@ -4,6 +4,7 @@ namespace App\Exports;
 
 use App\Models\CarbonEntry;
 use App\Models\Project;
+use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
@@ -13,7 +14,7 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, WithHeadings, WithMapping, WithTitle, ShouldAutoSize, WithStyles, WithCustomValueBinder
+class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, ShouldAutoSize, WithCustomValueBinder, WithHeadings, WithMapping, WithStyles, WithTitle
 {
     /** Karakter awal yang membuat teks dibaca sebagai formula oleh Excel/LibreOffice (OWASP). */
     private const FORMULA_TRIGGERS = ['=', '+', '-', '@', "\t", "\r"];
@@ -28,7 +29,8 @@ class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, Wi
         private string $format = 'xlsx',
     ) {}
 
-    public function query()
+    /** @return Builder<CarbonEntry> */
+    public function query(): Builder
     {
         $query = CarbonEntry::with(['project', 'category', 'emissionFactor', 'createdBy'])
             ->where('status', 'approved')
@@ -89,7 +91,7 @@ class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, Wi
             $this->text($entry->category?->name),
             $this->text($entry->emissionFactor?->name),
             $entry->entry_date?->format('d/m/Y'),
-            $entry->period_month . '/' . $entry->period_year,
+            $entry->period_month.'/'.$entry->period_year,
             $entry->quantity,
             $this->text($entry->source_unit),
             $entry->emission_factor_value,

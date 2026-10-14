@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\TransientToken;
 
 class AuthService
 {
@@ -69,7 +70,10 @@ class AuthService
 
         $user->update(['password' => Hash::make($newPassword)]);
 
-        // Cabut sesi di perangkat lain; token yang sedang dipakai tetap berlaku
+        // Cabut sesi di perangkat lain; token yang sedang dipakai tetap berlaku.
+        // Docblock Sanctum menyatakan selalu PersonalAccessToken, padahal bisa TransientToken (auth cookie/SPA)
+        // atau null (mis. login lewat actingAs di test); hanya PersonalAccessToken yang punya id.
+        /** @var PersonalAccessToken|TransientToken|null $current */
         $current = $user->currentAccessToken();
         $user->tokens()
             ->when($current instanceof PersonalAccessToken, fn ($q) => $q->whereKeyNot($current->getKey()))

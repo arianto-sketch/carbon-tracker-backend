@@ -3,6 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Project extends Model
@@ -29,29 +32,34 @@ class Project extends Model
         ];
     }
 
-    public function members()
+    /** @return BelongsToMany<User, $this> */
+    public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
             ->withPivot('role', 'joined_at')
             ->withTimestamps();
     }
 
-    public function projectMembers()
+    /** @return HasMany<ProjectMember, $this> */
+    public function projectMembers(): HasMany
     {
         return $this->hasMany(ProjectMember::class);
     }
 
-    public function carbonEntries()
+    /** @return HasMany<CarbonEntry, $this> */
+    public function carbonEntries(): HasMany
     {
         return $this->hasMany(CarbonEntry::class);
     }
 
-    public function carbonTargets()
+    /** @return HasMany<CarbonTarget, $this> */
+    public function carbonTargets(): HasMany
     {
         return $this->hasMany(CarbonTarget::class);
     }
 
-    public function createdBy()
+    /** @return BelongsTo<User, $this> */
+    public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }

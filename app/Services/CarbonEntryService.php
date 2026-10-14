@@ -7,17 +7,17 @@ use App\Models\CarbonEntry;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\ProjectMember;
-use App\Notifications\EntryWorkflowNotification;
 use App\Models\User;
+use App\Notifications\EntryWorkflowNotification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -85,7 +85,7 @@ class CarbonEntryService
                     'event'      => in_array($newStatus, self::STATUS_EVENTS, true) ? $newStatus : $log->action,
                     'user'       => $log->user ? ['id' => $log->user->id, 'name' => $log->user->name] : null,
                     'changes'    => (object) $changes,
-                    'created_at' => $log->created_at?->toISOString(),
+                    'created_at' => $log->created_at->toISOString(),
                 ];
             })
             ->all();
@@ -182,7 +182,7 @@ class CarbonEntryService
             ->where('is_active', true)
             ->firstOrFail();
 
-        $co2eKg = $this->calculate($data['quantity'], $factor->factor_value);
+        $co2eKg = $this->calculate($data['quantity'], (float) $factor->factor_value);
         $date = Carbon::parse($data['entry_date']);
 
         return CarbonEntry::create([
@@ -214,7 +214,7 @@ class CarbonEntryService
                 ->where('is_active', true)
                 ->firstOrFail();
 
-            $co2eKg = $this->calculate($data['quantity'], $factor->factor_value);
+            $co2eKg = $this->calculate($data['quantity'], (float) $factor->factor_value);
             $date = Carbon::parse($data['entry_date']);
 
             $entry->update([
@@ -356,7 +356,7 @@ class CarbonEntryService
     {
         try {
             Notification::send($users, $notification);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             report($e);
         }
     }

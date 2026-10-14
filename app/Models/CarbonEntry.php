@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CarbonEntry extends Model
@@ -47,32 +48,38 @@ class CarbonEntry extends Model
         ];
     }
 
-    public function project()
+    /** @return BelongsTo<Project, $this> */
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
     }
 
-    public function emissionFactor()
+    /** @return BelongsTo<EmissionFactor, $this> */
+    public function emissionFactor(): BelongsTo
     {
         return $this->belongsTo(EmissionFactor::class, 'emission_factor_id');
     }
 
-    public function category()
+    /** @return BelongsTo<EmissionCategory, $this> */
+    public function category(): BelongsTo
     {
         return $this->belongsTo(EmissionCategory::class, 'category_id');
     }
 
-    public function createdBy()
+    /** @return BelongsTo<User, $this> */
+    public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function approvedBy()
+    /** @return BelongsTo<User, $this> */
+    public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
 
-    public function rejectedBy()
+    /** @return BelongsTo<User, $this> */
+    public function rejectedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
     }

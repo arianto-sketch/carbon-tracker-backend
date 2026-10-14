@@ -2,9 +2,11 @@
 
 namespace App\Http\Resources;
 
+use App\Models\EmissionFactor;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/** @mixin EmissionFactor */
 class EmissionFactorResource extends JsonResource
 {
     public function toArray(Request $request): array

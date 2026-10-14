@@ -2,9 +2,11 @@
 
 namespace App\Http\Resources;
 
+use App\Models\EmissionCategory;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/** @mixin EmissionCategory */
 class EmissionCategoryResource extends JsonResource
 {
     public function toArray(Request $request): array

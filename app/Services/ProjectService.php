@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\EmissionCategory;
 use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
@@ -40,10 +41,12 @@ class ProjectService
         ]);
 
         // Creator otomatis jadi owner
+        // joined_at diisi eksplisit: default DB (useCurrent) tidak ikut termuat di model hasil create()
         ProjectMember::create([
             'project_id' => $project->id,
             'user_id' => $creator->id,
             'role' => 'owner',
+            'joined_at' => now(),
         ]);
 
         return $project->load('createdBy', 'projectMembers.user');
@@ -86,6 +89,7 @@ class ProjectService
                 'project_id' => $project->id,
                 'user_id' => $userId,
                 'role' => $role,
+                'joined_at' => now(),
             ]);
         });
     }
@@ -167,19 +171,23 @@ class ProjectService
     {
         $entries = $project->carbonEntries()->where('status', 'approved');
 
+        // Baris agregat (bukan model): nama kategori dimuat sekali lewat query terpisah
+        $byCategory = (clone $entries)
+            ->selectRaw('category_id, SUM(co2e_kg) as total_co2e_kg, COUNT(id) as count')
+            ->groupBy('category_id')
+            ->toBase()
+            ->get();
+        $categories = EmissionCategory::whereIn('id', $byCategory->pluck('category_id'))->get()->keyBy('id');
+
         return [
             'total_co2e_kg' => (float) $entries->sum('co2e_kg'),
             'entry_count' => $entries->count(),
-            'by_category' => $entries->with('category')
-                ->selectRaw('category_id, SUM(co2e_kg) as total_co2e_kg, COUNT(id) as count')
-                ->groupBy('category_id')
-                ->get()
-                ->map(fn ($row) => [
-                    'category_id' => $row->category_id,
-                    'category_name' => $row->category?->name,
-                    'total_co2e_kg' => (float) $row->total_co2e_kg,
-                    'count' => $row->count,
-                ]),
+            'by_category' => $byCategory->map(fn ($row) => [
+                'category_id' => $row->category_id,
+                'category_name' => $categories[$row->category_id]->name ?? null,
+                'total_co2e_kg' => (float) $row->total_co2e_kg,
+                'count' => $row->count,
+            ]),
         ];
     }
 }
