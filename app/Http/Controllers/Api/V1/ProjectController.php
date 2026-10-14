@@ -108,7 +108,8 @@ class ProjectController extends Controller
         $member = $this->projectService->addMember(
             $project,
             $request->user_id,
-            $request->role ?? 'member'
+            $request->role ?? 'member',
+            $request->user(),
         );
 
         return response()->json([
@@ -128,7 +129,7 @@ class ProjectController extends Controller
 
         $request->validate(['role' => ['required', 'in:owner,member,viewer']]);
 
-        $member = $this->projectService->updateMemberRole($project, $userId, $request->role);
+        $member = $this->projectService->updateMemberRole($project, $userId, $request->role, $request->user());
 
         return response()->json([
             'data' => new ProjectMemberResource($member),
@@ -145,7 +146,7 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Hanya owner atau admin yang bisa menghapus member.'], 403);
         }
 
-        $this->projectService->removeMember($project, $userId);
+        $this->projectService->removeMember($project, $userId, $request->user());
 
         return response()->json(['message' => 'Member berhasil dihapus dari project.']);
     }
