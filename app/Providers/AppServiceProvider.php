@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Models\CarbonEntry;
+use App\Models\User;
 use App\Observers\CarbonEntryObserver;
+use App\Observers\UserObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -18,6 +20,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         CarbonEntry::observe(CarbonEntryObserver::class);
+        User::observe(UserObserver::class);
 
         // Maks 5 percobaan login per menit untuk kombinasi email + IP
         RateLimiter::for('login', function (Request $request) {

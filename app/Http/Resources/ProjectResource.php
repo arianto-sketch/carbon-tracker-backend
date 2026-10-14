@@ -37,7 +37,12 @@ class ProjectResource extends JsonResource
             return null;
         }
 
-        // Detail project sudah memuat projectMembers; list project masih 1 query per item (maks 15/halaman)
+        // List project: role sudah dihitung lewat subquery (ProjectService::list)
+        if (array_key_exists('current_user_role', $this->resource->getAttributes())) {
+            return $this->resource->getAttribute('current_user_role');
+        }
+
+        // Detail project sudah memuat projectMembers
         if ($this->relationLoaded('projectMembers')) {
             return $this->projectMembers->firstWhere('user_id', $userId)?->role;
         }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -20,6 +21,35 @@ class UserService
             ->when($filters['role'] ?? null, fn ($query, $role) => $query->where('role', $role))
             ->orderBy('name')
             ->paginate($perPage);
+    }
+
+    /**
+     * Riwayat perubahan akun dari audit_logs (ditulis UserObserver), terbaru di atas.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function history(User $user): array
+    {
+        return AuditLog::with('user')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (AuditLog $log) {
+                $changes = [];
+                foreach ($log->new_values ?? [] as $field => $new) {
+                    $changes[$field] = ['old' => $log->old_values[$field] ?? null, 'new' => $new];
+                }
+
+                return [
+                    'id'         => $log->id,
+                    'action'     => $log->action,
+                    'user'       => $log->user ? ['id' => $log->user->id, 'name' => $log->user->name] : null,
+                    'changes'    => (object) $changes,
+                    'created_at' => $log->created_at->toISOString(),
+                ];
+            })
+            ->all();
     }
 
     public function create(array $data): User

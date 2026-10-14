@@ -15,6 +15,11 @@ class UserController extends Controller
 {
     public function __construct(private UserService $service) {}
 
+    public function history(int $id): JsonResponse
+    {
+        return response()->json(['data' => $this->service->history(User::findOrFail($id))]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([

@@ -21,7 +21,6 @@ Route::prefix('v1')->group(function () {
     // Auth — protected
     Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
         Route::post('/auth/logout', [AuthController::class, 'logout']);
-        Route::post('/auth/register', [AuthController::class, 'register']);
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::put('/auth/me', [AuthController::class, 'updateMe']);
         Route::put('/auth/me/password', [AuthController::class, 'changePassword']);
@@ -38,6 +37,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [UserController::class, 'index']);
             Route::post('/', [UserController::class, 'store']);
             Route::put('/{id}', [UserController::class, 'update']);
+            Route::get('/{id}/history', [UserController::class, 'history']);
         });
 
         // Emission Categories (read-only, semua user)

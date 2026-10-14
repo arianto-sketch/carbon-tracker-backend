@@ -17,7 +17,12 @@ class ProjectService
 {
     public function list(User $user, int $perPage = 15, ?string $search = null): LengthAwarePaginator
     {
+        // Role user di tiap project ikut dalam query yang sama (subquery), bukan 1 query per project
         $query = Project::with('createdBy')
+            ->addSelect(['projects.*', 'current_user_role' => ProjectMember::select('role')
+                ->whereColumn('project_members.project_id', 'projects.id')
+                ->where('project_members.user_id', $user->id)
+                ->limit(1)])
             ->when($search, fn ($q) => Like::anyContains($q, ['name', 'code'], $search));
 
         if (! $user->isAdmin()) {
