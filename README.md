@@ -98,6 +98,9 @@ Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-ske
 | Workflow | Kapan jalan | Isi |
 |---|---|---|
 | `Tests` (`.github/workflows/tests.yml`) | Setiap PR dan push ke `master` | PHPUnit dengan PHP 8.3, di SQLite dan di MySQL 8.4 |
+| `E2E` (`.github/workflows/e2e.yml`) | Setiap PR dan push ke `master`, dan **setiap hari** | E2E Playwright frontend `main` terhadap backend dari PR/branch ini (MySQL 8.4) |
 | `Security audit` (`.github/workflows/security-audit.yml`) | PR yang mengubah `composer.json`/`composer.lock`, push ke `master`, dan **setiap Senin** | `composer audit --locked` |
 
-Audit dijadwalkan mingguan karena advisory baru bisa muncul walau kode tidak berubah. E2E dijalankan di CI repo frontend terhadap `master` backend ini.
+- Audit dijadwalkan mingguan karena advisory baru bisa muncul walau kode tidak berubah.
+- E2E jalan di kedua arah: repo ini menguji backend terhadap frontend `main`, dan CI repo frontend menguji frontend terhadap `master` backend. Run E2E harian menangkap perubahan di repo frontend yang memengaruhi backend.
+- Branch protection `master` mewajibkan check `PHPUnit (sqlite)` dan `PHPUnit (mysql)` lulus sebelum merge. Dependabot alerts dan PR security update otomatis aktif.
