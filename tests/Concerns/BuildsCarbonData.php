@@ -52,14 +52,15 @@ trait BuildsCarbonData
         return $entry->fresh();
     }
 
-    protected function makeApprovedEntry(Project $project, User $creator, float $quantity = 100, string $date = '2026-03-15'): CarbonEntry
+    protected function makeApprovedEntry(Project $project, User $creator, float $quantity = 100, string $date = '2026-03-15', string $factorSlug = 'gasoline_vehicle'): CarbonEntry
     {
-        $factor = $this->gasolineFactor();
+        $factor = EmissionFactor::where('slug', $factorSlug)->firstOrFail();
 
         return CarbonEntry::create([
             'project_id' => $project->id,
             'emission_factor_id' => $factor->id,
             'category_id' => $factor->category_id,
+            'scope' => $factor->scope,
             'entry_date' => $date,
             'period_month' => (int) substr($date, 5, 2),
             'period_year' => (int) substr($date, 0, 4),

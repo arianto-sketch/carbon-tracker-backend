@@ -16,6 +16,7 @@ class CarbonEntryResource extends JsonResource
             'project_id'             => $this->project_id,
             'emission_factor'        => new EmissionFactorResource($this->whenLoaded('emissionFactor')),
             'category'               => new EmissionCategoryResource($this->whenLoaded('category')),
+            'scope'                  => $this->scope,
             'entry_date'             => $this->entry_date->toDateString(),
             'period_month'           => $this->period_month,
             'period_year'            => $this->period_year,

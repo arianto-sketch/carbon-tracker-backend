@@ -16,6 +16,7 @@ class EmissionFactorResource extends JsonResource
             'category' => new EmissionCategoryResource($this->whenLoaded('category')),
             'name' => $this->name,
             'slug' => $this->slug,
+            'scope' => $this->scope,
             'description' => $this->description,
             'source_unit' => $this->source_unit,
             'factor_value' => (float) $this->factor_value,

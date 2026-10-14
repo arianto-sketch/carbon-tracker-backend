@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\UpdateProfileRequest;
-use App\Http\Resources\UserResource;
+use App\Http\Resources\ProfileResource;
 use App\Services\AuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,7 +25,7 @@ class AuthController extends Controller
 
         return response()->json([
             'data' => [
-                'user' => new UserResource($result['user']),
+                'user' => new ProfileResource($result['user']),
                 'token' => $result['token'],
                 'token_type' => 'Bearer',
             ],
@@ -43,7 +43,7 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return response()->json([
-            'data' => new UserResource($request->user()),
+            'data' => new ProfileResource($request->user()),
         ]);
     }
 
@@ -52,7 +52,7 @@ class AuthController extends Controller
         $user = $this->authService->updateProfile($request->user(), $request->validated());
 
         return response()->json([
-            'data' => new UserResource($user),
+            'data' => new ProfileResource($user),
             'message' => 'Profil berhasil diperbarui.',
         ]);
     }

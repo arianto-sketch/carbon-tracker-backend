@@ -71,6 +71,9 @@ return [
     // Timestamp tetap disimpan dalam 'timezone' di atas.
     'business_timezone' => env('APP_BUSINESS_TIMEZONE', 'Asia/Jakarta'),
 
+    // URL aplikasi frontend (SPA) untuk tautan di email notifikasi
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
+
     // Batas request per menit per user untuk endpoint API ber-auth
     'api_rate_limit' => (int) env('API_RATE_LIMIT', 120),
 

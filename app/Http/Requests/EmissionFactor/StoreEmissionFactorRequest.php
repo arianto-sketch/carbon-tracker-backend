@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\EmissionFactor;
 
+use App\Models\EmissionFactor;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreEmissionFactorRequest extends FormRequest
 {
@@ -15,6 +17,7 @@ class StoreEmissionFactorRequest extends FormRequest
     {
         return [
             'category_id' => ['required', 'exists:emission_categories,id'],
+            'scope' => ['sometimes', 'integer', Rule::in(EmissionFactor::SCOPES)],
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:100', 'unique:emission_factors,slug'],
             'description' => ['nullable', 'string'],

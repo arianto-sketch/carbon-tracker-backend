@@ -14,6 +14,7 @@ class CarbonEntry extends Model
         'project_id',
         'emission_factor_id',
         'category_id',
+        'scope',
         'entry_date',
         'period_month',
         'period_year',
@@ -45,6 +46,7 @@ class CarbonEntry extends Model
             'quantity' => 'decimal:4',
             'emission_factor_value' => 'decimal:8',
             'co2e_kg' => 'decimal:4',
+            'scope' => 'integer',
         ];
     }
 
