@@ -1,0 +1,11 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - routes
+        - database
+    level: 5
+    # Model memakai method casts() (gaya Laravel 11+); baca isinya agar tipe cast (date, array, ...) dikenali
+    parseModelCastsMethod: true
