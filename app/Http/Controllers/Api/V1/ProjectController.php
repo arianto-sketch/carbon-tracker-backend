@@ -105,6 +105,8 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Hanya owner atau admin yang bisa menambah member.'], 403);
         }
 
+        // Cek di atas adalah penolakan cepat; service mengecek ulang di dalam transaksi
+        // supaya owner yang diturunkan di tengah jalan tidak lolos.
         $member = $this->projectService->addMember(
             $project,
             $request->user_id,

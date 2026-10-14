@@ -80,9 +80,12 @@ class CarbonTargetService
 
         // Semua project sekaligus: jumlah query tetap, berapa pun banyaknya project
         $projects = $projects->keyBy('id');
+        // Urutan per project lalu target, supaya baris dengan persentase sama tetap berurutan stabil
         $targets = CarbonTarget::with('category')
             ->whereIn('project_id', $projects->keys())
             ->where('period_year', $year)
+            ->orderBy('project_id')
+            ->orderBy('id')
             ->get();
         $totals = $this->approvedTotalsByMonth($projects->keys()->all(), [$year])->groupBy('project_id');
 

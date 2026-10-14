@@ -78,7 +78,7 @@ class ProjectOwnershipTest extends TestCase
         ProjectMember::where('project_id', $this->project->id)->where('user_id', $other->id)->update(['role' => 'member']);
 
         $this->assertThrows(
-            fn () => app(ProjectService::class)->updateMemberRole($this->project, $this->owner->id, 'member'),
+            fn () => app(ProjectService::class)->updateMemberRole($this->project, $this->owner->id, 'member', $this->owner),
             ValidationException::class,
         );
 
@@ -114,6 +114,18 @@ class ProjectOwnershipTest extends TestCase
 
         $this->assertSame('member', $this->roleOf($this->member));
         $this->assertNull($this->roleOf($newcomer));
+    }
+
+    public function test_service_rejection_is_rendered_as_403_json(): void
+    {
+        // Penolakan dari service (bukan cek awal controller) tetap sampai ke klien sebagai 403 JSON berpesan
+        $this->mock(ProjectService::class, fn ($mock) => $mock->shouldReceive('removeMember')
+            ->andThrow(new AuthorizationException('Hanya owner atau admin yang bisa mengelola member project.')));
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->deleteJson("/api/v1/projects/{$this->project->id}/members/{$this->member->id}")
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Hanya owner atau admin yang bisa mengelola member project.');
     }
 
     public function test_admin_manages_members_without_being_a_member(): void
