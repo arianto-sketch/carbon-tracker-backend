@@ -18,7 +18,7 @@ class CarbonEntryImportTemplate implements WithMultipleSheets
     public function sheets(): array
     {
         return [
-            new class extends FormulaSafeValueBinder implements FromArray, WithTitle, ShouldAutoSize, WithCustomValueBinder
+            new class extends FormulaSafeValueBinder implements FromArray, ShouldAutoSize, WithCustomValueBinder, WithTitle
             {
                 public function array(): array
                 {
@@ -31,7 +31,7 @@ class CarbonEntryImportTemplate implements WithMultipleSheets
                 }
             },
             // Nama faktor/kategori/satuan diisi admin: tetap dinetralkan agar tidak jadi formula
-            new class extends FormulaSafeValueBinder implements FromArray, WithTitle, ShouldAutoSize, WithCustomValueBinder
+            new class extends FormulaSafeValueBinder implements FromArray, ShouldAutoSize, WithCustomValueBinder, WithTitle
             {
                 public function array(): array
                 {

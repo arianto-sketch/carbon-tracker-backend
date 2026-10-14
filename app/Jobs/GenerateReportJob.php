@@ -10,7 +10,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Throwable;
 
@@ -19,6 +18,7 @@ class GenerateReportJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public int $timeout = 300;
 
     public function __construct(private ReportJob $reportJob) {}
@@ -31,8 +31,8 @@ class GenerateReportJob implements ShouldQueue
         $format = $this->reportJob->format;
         $allowedProjectIds = $reportService->allowedProjectIds($this->reportJob->user);
 
-        $fileName = 'carbon-report-' . $this->reportJob->id . '-' . now()->format('Ymd_His') . '.' . $format;
-        $filePath = 'reports/' . $fileName;
+        $fileName = 'carbon-report-'.$this->reportJob->id.'-'.now()->format('Ymd_His').'.'.$format;
+        $filePath = 'reports/'.$fileName;
 
         // Error dibiarkan naik supaya queue bisa retry ($tries); status 'failed' diset di failed()
         Excel::store(

@@ -211,7 +211,7 @@ class CarbonEntryController extends Controller
 
         return response()->json([
             'data'    => $results,
-            'message' => count($results['created']) . ' entry berhasil dibuat, ' . count($results['errors']) . ' gagal.',
+            'message' => count($results['created']).' entry berhasil dibuat, '.count($results['errors']).' gagal.',
         ], 201);
     }
 

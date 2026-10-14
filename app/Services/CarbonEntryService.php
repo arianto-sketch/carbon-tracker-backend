@@ -7,17 +7,17 @@ use App\Models\CarbonEntry;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\ProjectMember;
-use App\Notifications\EntryWorkflowNotification;
 use App\Models\User;
+use App\Notifications\EntryWorkflowNotification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -356,7 +356,7 @@ class CarbonEntryService
     {
         try {
             Notification::send($users, $notification);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             report($e);
         }
     }

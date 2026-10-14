@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\CarbonEntry;
 use App\Models\Project;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
@@ -163,14 +162,14 @@ class DashboardService
         $month = $filters['period_month'] ?? null;
 
         if ($month) {
-            return $this->monthLabel($month) . ' ' . $year;
+            return $this->monthLabel($month).' '.$year;
         }
 
-        return 'YTD ' . $year;
+        return 'YTD '.$year;
     }
 
     private function monthLabel(int $month): string
     {
-        return ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'][$month - 1];
+        return ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'][$month - 1];
     }
 }

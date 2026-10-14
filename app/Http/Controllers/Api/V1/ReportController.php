@@ -56,7 +56,7 @@ class ReportController extends Controller
         $job = $this->service->getJob($jobId, $request->user());
 
         if (! $job->isDone() || ! $job->file_path) {
-            return response()->json(['message' => 'File belum tersedia. Status: ' . $job->status], 400);
+            return response()->json(['message' => 'File belum tersedia. Status: '.$job->status], 400);
         }
 
         if (! Storage::disk('local')->exists($job->file_path)) {
