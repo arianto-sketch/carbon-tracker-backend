@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -70,6 +71,59 @@ class UserAuditTest extends TestCase
             ->assertJsonPath('data.0.user.name', 'Admin Utama')
             ->assertJsonPath('data.0.changes.role.old', 'pm')
             ->assertJsonPath('data.0.changes.role.new', 'viewer');
+    }
+
+    public function test_profile_name_change_is_logged_with_user_as_actor(): void
+    {
+        $user = User::factory()->create(['name' => 'Nama Lama']);
+
+        $this->actingAs($user, 'sanctum')->putJson('/api/v1/auth/me', ['name' => 'Nama Baru'])->assertOk();
+
+        $log = AuditLog::where('model_type', User::class)->where('model_id', $user->id)->where('action', 'updated')->sole();
+        $this->assertSame($user->id, $log->user_id);
+        $this->assertSame(['name' => 'Nama Lama'], $log->old_values);
+        $this->assertSame(['name' => 'Nama Baru'], $log->new_values);
+    }
+
+    public function test_history_is_newest_first_and_ends_with_creation(): void
+    {
+        $this->actingAs($this->admin, 'sanctum')->postJson('/api/v1/users', [
+            'name' => 'Sari', 'email' => 'sari@example.test', 'password' => 'rahasia123', 'password_confirmation' => 'rahasia123', 'role' => 'pm',
+        ])->assertCreated();
+        $sari = User::where('email', 'sari@example.test')->sole();
+        $this->actingAs($this->admin, 'sanctum')->putJson("/api/v1/users/{$sari->id}", ['name' => 'Sari W'])->assertOk();
+        $this->actingAs($this->admin, 'sanctum')->putJson("/api/v1/users/{$sari->id}", ['role' => 'viewer'])->assertOk();
+
+        $this->actingAs($this->admin, 'sanctum')->getJson("/api/v1/users/{$sari->id}/history")
+            ->assertOk()
+            ->assertJsonCount(3, 'data')
+            ->assertJsonPath('data.0.changes.role.new', 'viewer')
+            ->assertJsonPath('data.1.changes.name.old', 'Sari')
+            ->assertJsonPath('data.1.changes.name.new', 'Sari W')
+            ->assertJsonPath('data.2.action', 'created')
+            ->assertJsonPath('data.2.changes.role.new', 'pm');
+    }
+
+    public function test_history_is_limited_to_most_recent_entries(): void
+    {
+        $user = User::factory()->create();
+        $rows = [];
+        for ($i = 1; $i <= UserService::HISTORY_LIMIT + 5; $i++) {
+            $rows[] = [
+                'action'     => 'updated',
+                'model_type' => User::class,
+                'model_id'   => $user->id,
+                'old_values' => json_encode(['name' => 'v'.($i - 1)]),
+                'new_values' => json_encode(['name' => 'v'.$i]),
+                'created_at' => now(),
+            ];
+        }
+        AuditLog::insert($rows);
+
+        $this->actingAs($this->admin, 'sanctum')->getJson("/api/v1/users/{$user->id}/history")
+            ->assertOk()
+            ->assertJsonCount(UserService::HISTORY_LIMIT, 'data')
+            ->assertJsonPath('data.0.changes.name.new', 'v'.(UserService::HISTORY_LIMIT + 5));
     }
 
     public function test_non_admin_cannot_see_user_history(): void

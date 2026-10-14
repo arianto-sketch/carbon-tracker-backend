@@ -12,6 +12,9 @@ use Illuminate\Validation\ValidationException;
 
 class UserService
 {
+    /** Batas entri riwayat yang dikirim ke dialog Riwayat (terbaru dulu) */
+    public const HISTORY_LIMIT = 100;
+
     public function __construct(private AuthService $authService) {}
 
     public function list(array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -24,7 +27,7 @@ class UserService
     }
 
     /**
-     * Riwayat perubahan akun dari audit_logs (ditulis UserObserver), terbaru di atas.
+     * Riwayat perubahan akun dari audit_logs (ditulis UserObserver), terbaru di atas, maksimal HISTORY_LIMIT entri.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -34,6 +37,7 @@ class UserService
             ->where('model_type', User::class)
             ->where('model_id', $user->id)
             ->orderByDesc('id')
+            ->limit(self::HISTORY_LIMIT)
             ->get()
             ->map(function (AuditLog $log) {
                 $changes = [];
