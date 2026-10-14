@@ -4,6 +4,7 @@ namespace App\Exports;
 
 use App\Models\CarbonEntry;
 use App\Models\Project;
+use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
@@ -28,7 +29,8 @@ class CarbonReportExport extends FormulaSafeValueBinder implements FromQuery, Sh
         private string $format = 'xlsx',
     ) {}
 
-    public function query()
+    /** @return Builder<CarbonEntry> */
+    public function query(): Builder
     {
         $query = CarbonEntry::with(['project', 'category', 'emissionFactor', 'createdBy'])
             ->where('status', 'approved')

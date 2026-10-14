@@ -69,7 +69,9 @@ class AuthService
 
         $user->update(['password' => Hash::make($newPassword)]);
 
-        // Cabut sesi di perangkat lain; token yang sedang dipakai tetap berlaku
+        // Cabut sesi di perangkat lain; token yang sedang dipakai tetap berlaku.
+        // Docblock Sanctum menyatakan token selalu ada, padahal bisa null (mis. login lewat actingAs di test).
+        /** @var PersonalAccessToken|null $current */
         $current = $user->currentAccessToken();
         $user->tokens()
             ->when($current instanceof PersonalAccessToken, fn ($q) => $q->whereKeyNot($current->getKey()))

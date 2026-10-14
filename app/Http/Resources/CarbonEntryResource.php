@@ -2,9 +2,11 @@
 
 namespace App\Http\Resources;
 
+use App\Models\CarbonEntry;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/** @mixin CarbonEntry */
 class CarbonEntryResource extends JsonResource
 {
     public function toArray(Request $request): array
@@ -14,7 +16,7 @@ class CarbonEntryResource extends JsonResource
             'project_id'             => $this->project_id,
             'emission_factor'        => new EmissionFactorResource($this->whenLoaded('emissionFactor')),
             'category'               => new EmissionCategoryResource($this->whenLoaded('category')),
-            'entry_date'             => $this->entry_date?->toDateString(),
+            'entry_date'             => $this->entry_date->toDateString(),
             'period_month'           => $this->period_month,
             'period_year'            => $this->period_year,
             'quantity'               => (float) $this->quantity,

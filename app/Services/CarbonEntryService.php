@@ -85,7 +85,7 @@ class CarbonEntryService
                     'event'      => in_array($newStatus, self::STATUS_EVENTS, true) ? $newStatus : $log->action,
                     'user'       => $log->user ? ['id' => $log->user->id, 'name' => $log->user->name] : null,
                     'changes'    => (object) $changes,
-                    'created_at' => $log->created_at?->toISOString(),
+                    'created_at' => $log->created_at->toISOString(),
                 ];
             })
             ->all();
@@ -182,7 +182,7 @@ class CarbonEntryService
             ->where('is_active', true)
             ->firstOrFail();
 
-        $co2eKg = $this->calculate($data['quantity'], $factor->factor_value);
+        $co2eKg = $this->calculate($data['quantity'], (float) $factor->factor_value);
         $date = Carbon::parse($data['entry_date']);
 
         return CarbonEntry::create([
@@ -214,7 +214,7 @@ class CarbonEntryService
                 ->where('is_active', true)
                 ->firstOrFail();
 
-            $co2eKg = $this->calculate($data['quantity'], $factor->factor_value);
+            $co2eKg = $this->calculate($data['quantity'], (float) $factor->factor_value);
             $date = Carbon::parse($data['entry_date']);
 
             $entry->update([

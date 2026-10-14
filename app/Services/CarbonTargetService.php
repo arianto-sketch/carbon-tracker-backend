@@ -126,7 +126,7 @@ class CarbonTargetService
         return [
             'target_id'             => $target->id,
             'project_id'            => $target->project_id,
-            'category'              => $target->category?->name ?? 'Semua Kategori',
+            'category'              => $target->category->name ?? 'Semua Kategori',
             'period_type'           => $target->period_type,
             'period_year'           => $target->period_year,
             'period_value'          => $target->period_value,

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EmissionCategory extends Model
 {
@@ -22,12 +23,14 @@ class EmissionCategory extends Model
         ];
     }
 
-    public function emissionFactors()
+    /** @return HasMany<EmissionFactor, $this> */
+    public function emissionFactors(): HasMany
     {
         return $this->hasMany(EmissionFactor::class, 'category_id');
     }
 
-    public function carbonEntries()
+    /** @return HasMany<CarbonEntry, $this> */
+    public function carbonEntries(): HasMany
     {
         return $this->hasMany(CarbonEntry::class, 'category_id');
     }

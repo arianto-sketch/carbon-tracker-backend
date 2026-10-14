@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -34,19 +36,22 @@ class User extends Authenticatable
         ];
     }
 
-    public function projectMembers()
+    /** @return HasMany<ProjectMember, $this> */
+    public function projectMembers(): HasMany
     {
         return $this->hasMany(ProjectMember::class);
     }
 
-    public function projects()
+    /** @return BelongsToMany<Project, $this> */
+    public function projects(): BelongsToMany
     {
         return $this->belongsToMany(Project::class, 'project_members', 'user_id', 'project_id')
             ->withPivot('role', 'joined_at')
             ->withTimestamps();
     }
 
-    public function carbonEntries()
+    /** @return HasMany<CarbonEntry, $this> */
+    public function carbonEntries(): HasMany
     {
         return $this->hasMany(CarbonEntry::class, 'created_by');
     }

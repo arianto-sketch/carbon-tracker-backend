@@ -139,6 +139,14 @@ class ProjectOwnershipTest extends TestCase
         $this->assertNull($this->roleOf($this->member));
     }
 
+    public function test_added_member_response_includes_joined_at(): void
+    {
+        $this->actingAs($this->owner, 'sanctum')
+            ->postJson("/api/v1/projects/{$this->project->id}/members", ['user_id' => User::factory()->create()->id, 'role' => 'member'])
+            ->assertCreated()
+            ->assertJsonPath('data.joined_at', fn ($value) => is_string($value) && $value !== '');
+    }
+
     public function test_owner_cannot_be_removed(): void
     {
         $this->actingAs($this->admin, 'sanctum')

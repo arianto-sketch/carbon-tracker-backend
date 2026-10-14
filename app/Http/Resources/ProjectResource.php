@@ -2,9 +2,11 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Project;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
+/** @mixin Project */
 class ProjectResource extends JsonResource
 {
     public function toArray(Request $request): array
@@ -16,7 +18,7 @@ class ProjectResource extends JsonResource
             'description' => $this->description,
             'client_name' => $this->client_name,
             'status' => $this->status,
-            'start_date' => $this->start_date?->toDateString(),
+            'start_date' => $this->start_date->toDateString(),
             'end_date' => $this->end_date?->toDateString(),
             'created_by' => new UserResource($this->whenLoaded('createdBy')),
             'members' => ProjectMemberResource::collection($this->whenLoaded('projectMembers')),
