@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
 use App\Services\ProjectService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\Concerns\BuildsCarbonData;
@@ -97,6 +98,33 @@ class ProjectOwnershipTest extends TestCase
     public function test_changing_role_of_a_non_member_is_not_found(): void
     {
         $this->changeRole($this->owner, User::factory()->create(), 'member')->assertNotFound();
+    }
+
+    public function test_actor_demoted_meanwhile_cannot_manage_members(): void
+    {
+        // Owner sudah lolos cek di controller, lalu diturunkan owner lain sebelum service berjalan
+        $this->addMember($this->project, User::factory()->create(), 'owner');
+        ProjectMember::where('project_id', $this->project->id)->where('user_id', $this->owner->id)->update(['role' => 'member']);
+        $service = app(ProjectService::class);
+        $newcomer = User::factory()->create();
+
+        $this->assertThrows(fn () => $service->updateMemberRole($this->project, $this->member->id, 'owner', $this->owner), AuthorizationException::class);
+        $this->assertThrows(fn () => $service->removeMember($this->project, $this->member->id, $this->owner), AuthorizationException::class);
+        $this->assertThrows(fn () => $service->addMember($this->project, $newcomer->id, 'member', $this->owner), AuthorizationException::class);
+
+        $this->assertSame('member', $this->roleOf($this->member));
+        $this->assertNull($this->roleOf($newcomer));
+    }
+
+    public function test_admin_manages_members_without_being_a_member(): void
+    {
+        $service = app(ProjectService::class);
+
+        $service->updateMemberRole($this->project, $this->member->id, 'viewer', $this->admin);
+        $this->assertSame('viewer', $this->roleOf($this->member));
+
+        $service->removeMember($this->project, $this->member->id, $this->admin);
+        $this->assertNull($this->roleOf($this->member));
     }
 
     public function test_owner_cannot_be_removed(): void

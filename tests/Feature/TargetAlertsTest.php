@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\CarbonTarget;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\CarbonTargetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\Concerns\BuildsCarbonData;
 use Tests\TestCase;
 
@@ -38,6 +40,29 @@ class TargetAlertsTest extends TestCase
         ]);
 
         return $project;
+    }
+
+    public function test_alerts_use_a_constant_number_of_queries(): void
+    {
+        $service = app(CarbonTargetService::class);
+        $count = function () use ($service) {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $service->getAlerts($this->admin, 2026);
+            $n = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $n;
+        };
+
+        $this->projectAtUsage($this->pm, 'Q1', 90);
+        $one = $count();
+        foreach (['Q2', 'Q3', 'Q4', 'Q5'] as $code) {
+            $this->projectAtUsage($this->pm, $code, 95);
+        }
+
+        $this->assertSame($one, $count());
+        $this->assertCount(5, $service->getAlerts($this->admin, 2026));
     }
 
     public function test_alerts_include_targets_at_or_above_80_percent_sorted_by_usage(): void
