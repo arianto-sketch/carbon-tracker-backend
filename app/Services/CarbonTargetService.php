@@ -126,6 +126,7 @@ class CarbonTargetService
         return [
             'target_id'             => $target->id,
             'project_id'            => $target->project_id,
+            // category null = target untuk semua kategori; `??` sudah aman bila relasinya null
             'category'              => $target->category->name ?? 'Semua Kategori',
             'period_type'           => $target->period_type,
             'period_year'           => $target->period_year,
