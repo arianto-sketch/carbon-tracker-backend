@@ -14,7 +14,7 @@ class EmissionFactorService
 
     public function list(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
-        $query = EmissionFactor::with('category');
+        $query = EmissionFactor::with(['category', 'values']);
 
         if (isset($filters['category_id'])) {
             $query->where('category_id', $filters['category_id']);
@@ -71,7 +71,8 @@ class EmissionFactorService
         ]);
 
         // Nilai diubah dari form faktor (tanpa periode): koreksi periode yang berlaku hari ini
-        if (number_format((float) $data['factor_value'], 8, '.', '') !== (string) $factor->factor_value) {
+        $today = now(config('app.business_timezone'))->toDateString();
+        if (number_format((float) $data['factor_value'], 8, '.', '') !== $factor->valueOn($today)) {
             $this->values->correctCurrent($factor, $data['factor_value']);
         }
 

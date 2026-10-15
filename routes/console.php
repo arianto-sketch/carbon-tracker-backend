@@ -24,6 +24,9 @@ Schedule::command('entries:purge-deleted-attachments')->daily();
 // Token reset password yang sudah kedaluwarsa
 Schedule::command('auth:clear-resets')->daily();
 
+// Nilai faktor "saat ini" mengikuti periode yang mulai berlaku hari ini (tengah malam WIB)
+Schedule::command('factors:sync-current-values')->dailyAt('00:05')->timezone(config('app.business_timezone'));
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

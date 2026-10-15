@@ -178,8 +178,16 @@ class CarbonEntryService
 
     public function create(array $data, Project $project, User $creator): CarbonEntry
     {
+        return DB::transaction(fn () => $this->createEntry($data, $project, $creator));
+    }
+
+    private function createEntry(array $data, Project $project, User $creator): CarbonEntry
+    {
+        // Kunci baca: perubahan periode nilai faktor (kunci tulis) dan pembuatan entri tidak saling
+        // menyalip, jadi entri baru tidak memakai nilai yang sedang diganti
         $factor = EmissionFactor::where('id', $data['emission_factor_id'])
             ->where('is_active', true)
+            ->sharedLock()
             ->firstOrFail();
 
         $date = Carbon::parse($data['entry_date']);
@@ -215,6 +223,7 @@ class CarbonEntryService
 
             $factor = EmissionFactor::where('id', $data['emission_factor_id'])
                 ->where('is_active', true)
+                ->sharedLock()
                 ->firstOrFail();
 
             $date = Carbon::parse($data['entry_date']);

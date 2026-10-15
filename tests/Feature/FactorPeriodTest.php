@@ -7,6 +7,7 @@ use App\Models\CarbonEntry;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -138,6 +139,44 @@ class FactorPeriodTest extends TestCase
     public function test_only_admins_manage_periods(): void
     {
         $this->actingAs($this->owner, 'sanctum')->postJson($this->url(), ['valid_from' => '2025-01-01', 'factor_value' => 0.8])->assertForbidden();
+    }
+
+    public function test_current_value_is_refreshed_daily_when_a_future_period_starts(): void
+    {
+        $this->addPeriod(now()->addDays(3)->toDateString(), 0.7)->assertCreated();
+        $this->assertSame('0.87000000', $this->pln->fresh()->factor_value);
+
+        $this->travel(4)->days();
+        $this->artisan('factors:sync-current-values')->assertSuccessful();
+
+        $this->assertSame('0.70000000', $this->pln->fresh()->factor_value);
+        $this->assertTrue(collect(app(Schedule::class)->events())
+            ->contains(fn ($event) => str_contains((string) $event->command, 'factors:sync-current-values')));
+    }
+
+    public function test_factor_list_shows_the_value_valid_today_even_before_the_daily_sync(): void
+    {
+        $this->addPeriod(now()->addDays(3)->toDateString(), 0.7)->assertCreated();
+        $this->travel(4)->days();
+
+        $this->actingAs($this->admin, 'sanctum')->getJson('/api/v1/emission-factors?search=Jawa-Bali')
+            ->assertOk()
+            ->assertJsonPath('data.0.factor_value', 0.7);
+    }
+
+    public function test_sending_todays_value_from_the_factor_form_changes_nothing(): void
+    {
+        // Kolom factor_value basi (sinkron harian belum jalan) tidak boleh dianggap koreksi
+        $periodId = $this->addPeriod(now()->addDays(3)->toDateString(), 0.7)->json('data.id');
+        $this->travel(4)->days();
+
+        $this->actingAs($this->admin, 'sanctum')->putJson("/api/v1/emission-factors/{$this->pln->id}", [
+            'category_id' => $this->pln->category_id, 'name' => $this->pln->name, 'slug' => $this->pln->slug,
+            'source_unit' => $this->pln->source_unit, 'factor_value' => 0.7,
+        ])->assertOk();
+
+        $this->assertSame(['0.87000000', '0.70000000'], $this->pln->values()->pluck('factor_value')->all());
+        $this->assertNotNull($periodId);
     }
 
     public function test_editing_factor_value_on_the_factor_corrects_the_current_period(): void

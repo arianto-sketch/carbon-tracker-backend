@@ -36,6 +36,7 @@ return new class extends Migration
         ]));
     }
 
+    /** Riwayat periode (termasuk yang dijadwalkan ke depan) ikut hilang; factor_value tetap nilai hari ini */
     public function down(): void
     {
         Schema::dropIfExists('emission_factor_values');

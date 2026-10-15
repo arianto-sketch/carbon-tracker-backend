@@ -19,7 +19,10 @@ class EmissionFactorResource extends JsonResource
             'scope' => $this->scope,
             'description' => $this->description,
             'source_unit' => $this->source_unit,
-            'factor_value' => (float) $this->factor_value,
+            // Nilai yang berlaku hari ini (periode bisa mulai berlaku sebelum sinkron harian kolomnya)
+            'factor_value' => (float) ($this->relationLoaded('values')
+                ? $this->valueOn(now(config('app.business_timezone'))->toDateString())
+                : $this->factor_value),
             'factor_unit' => $this->factor_unit,
             'source' => $this->source,
             'version' => $this->version,

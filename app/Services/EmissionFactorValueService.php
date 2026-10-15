@@ -102,7 +102,7 @@ class EmissionFactorValueService
     /** Entri submitted/approved yang memakai nilai berbeda dari periode yang berlaku pada tanggalnya */
     public function lockedCount(EmissionFactor $factor): int
     {
-        $factor->load('values');
+        $factor->loadMissing('values');
         $locked = 0;
 
         CarbonEntry::where('emission_factor_id', $factor->id)
@@ -126,8 +126,10 @@ class EmissionFactorValueService
         $factor->update(['factor_value' => $factor->valueOn($this->today())]);
 
         $recalculated = 0;
+        // Dibaca dengan kunci: suntingan draft yang bersamaan tidak tertimpa nilai dari snapshot lama
         CarbonEntry::where('emission_factor_id', $factor->id)
             ->whereIn('status', ['draft', 'rejected'])
+            ->lockForUpdate()
             ->chunkById(200, function ($entries) use ($factor, &$recalculated) {
                 foreach ($entries as $entry) {
                     $value = $factor->valueOn($entry->entry_date);
