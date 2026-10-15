@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\CarbonTargetController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
+use App\Http\Controllers\Api\V1\EmissionFactorValueController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ReportController;
@@ -55,6 +56,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/emission-factors', [EmissionFactorController::class, 'store'])->middleware('admin');
         Route::put('/emission-factors/{id}', [EmissionFactorController::class, 'update'])->middleware('admin');
         Route::delete('/emission-factors/{id}', [EmissionFactorController::class, 'destroy'])->middleware('admin');
+
+        // Nilai faktor per periode berlaku
+        Route::get('/emission-factors/{id}/values', [EmissionFactorValueController::class, 'index']);
+        Route::post('/emission-factors/{id}/values', [EmissionFactorValueController::class, 'store'])->middleware('admin');
+        Route::put('/emission-factors/{id}/values/{valueId}', [EmissionFactorValueController::class, 'update'])->middleware('admin');
+        Route::delete('/emission-factors/{id}/values/{valueId}', [EmissionFactorValueController::class, 'destroy'])->middleware('admin');
 
         // Projects
         Route::get('/projects', [ProjectController::class, 'index']);

@@ -135,6 +135,8 @@ return [
         'role'               => 'role',
         'scope'              => 'scope',
         'search'             => 'kata kunci',
+        'source'             => 'sumber',
+        'valid_from'         => 'tanggal berlaku',
         'source_unit'        => 'satuan',
         'start_date'         => 'tanggal mulai',
         'status'             => 'status',

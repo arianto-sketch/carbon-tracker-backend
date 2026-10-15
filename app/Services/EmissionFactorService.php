@@ -6,12 +6,15 @@ use App\Models\EmissionFactor;
 use App\Models\User;
 use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 
 class EmissionFactorService
 {
+    public function __construct(private EmissionFactorValueService $values) {}
+
     public function list(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
-        $query = EmissionFactor::with('category');
+        $query = EmissionFactor::with(['category', 'values']);
 
         if (isset($filters['category_id'])) {
             $query->where('category_id', $filters['category_id']);
@@ -32,7 +35,8 @@ class EmissionFactorService
 
     public function create(array $data, User $creator): EmissionFactor
     {
-        return EmissionFactor::create([
+        // Periode nilai pertama dibuat oleh event model dalam transaksi yang sama
+        return DB::transaction(fn () => EmissionFactor::create([
             'category_id' => $data['category_id'],
             // Klien yang belum mengirim scope: Scope 3 (emisi tidak langsung lainnya)
             'scope' => $data['scope'] ?? 3,
@@ -46,7 +50,7 @@ class EmissionFactorService
             'version' => $data['version'] ?? null,
             'is_active' => true,
             'created_by' => $creator->id,
-        ]);
+        ]));
     }
 
     public function update(EmissionFactor $factor, array $data, User $updater): EmissionFactor
@@ -59,13 +63,18 @@ class EmissionFactorService
             'slug' => $data['slug'],
             'description' => $data['description'] ?? null,
             'source_unit' => $data['source_unit'],
-            'factor_value' => $data['factor_value'],
             'factor_unit' => $data['factor_unit'] ?? $factor->factor_unit,
             'source' => $data['source'] ?? null,
             'version' => $data['version'] ?? null,
             'is_active' => $data['is_active'] ?? $factor->is_active,
             'updated_by' => $updater->id,
         ]);
+
+        // Nilai diubah dari form faktor (tanpa periode): koreksi periode yang berlaku hari ini
+        $today = now(config('app.business_timezone'))->toDateString();
+        if (number_format((float) $data['factor_value'], 8, '.', '') !== $factor->valueOn($today)) {
+            $this->values->correctCurrent($factor, $data['factor_value']);
+        }
 
         return $factor->fresh('category');
     }

@@ -58,7 +58,7 @@ class CarbonEntryImportService
             $this->rejectFile('File berisi '.$rows->count().' baris; maksimal '.self::MAX_ROWS.' baris per import.');
         }
 
-        $factors = EmissionFactor::where('is_active', true)->get()->keyBy('slug');
+        $factors = EmissionFactor::with('values')->where('is_active', true)->get()->keyBy('slug');
         $today = now(config('app.business_timezone'))->toDateString();
 
         $result = $rows->map(fn ($r) => $this->previewRow($r['row'], $r['raw'], $factors, $today));
@@ -131,7 +131,7 @@ class CarbonEntryImportService
                 'description'        => $values['keterangan'],
                 'vendor_name'        => $values['vendor'],
                 'activity_type'      => $values['tipe_aktivitas'],
-                'co2e_kg'            => $errors === [] ? round((float) $values['jumlah'] * (float) $factor->factor_value, 4) : null,
+                'co2e_kg'            => $errors === [] ? round((float) $values['jumlah'] * (float) $factor->valueOn($values['tanggal']), 4) : null,
             ],
             'errors' => $errors,
         ];

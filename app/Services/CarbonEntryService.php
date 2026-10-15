@@ -178,12 +178,22 @@ class CarbonEntryService
 
     public function create(array $data, Project $project, User $creator): CarbonEntry
     {
+        return DB::transaction(fn () => $this->createEntry($data, $project, $creator));
+    }
+
+    private function createEntry(array $data, Project $project, User $creator): CarbonEntry
+    {
+        // Kunci baca: perubahan periode nilai faktor (kunci tulis) dan pembuatan entri tidak saling
+        // menyalip, jadi entri baru tidak memakai nilai yang sedang diganti
         $factor = EmissionFactor::where('id', $data['emission_factor_id'])
             ->where('is_active', true)
+            ->sharedLock()
             ->firstOrFail();
 
-        $co2eKg = $this->calculate($data['quantity'], (float) $factor->factor_value);
         $date = Carbon::parse($data['entry_date']);
+        // Nilai faktor yang berlaku pada tanggal aktivitas (bukan selalu nilai terbaru)
+        $factorValue = $factor->valueOn($date);
+        $co2eKg = $this->calculate($data['quantity'], (float) $factorValue);
 
         return CarbonEntry::create([
             'project_id'            => $project->id,
@@ -195,7 +205,7 @@ class CarbonEntryService
             'period_year'           => $date->year,
             'quantity'              => $data['quantity'],
             'source_unit'           => $factor->source_unit,
-            'emission_factor_value' => $factor->factor_value,
+            'emission_factor_value' => $factorValue,
             'co2e_kg'               => $co2eKg,
             'description'           => $data['description'] ?? null,
             'vendor_name'           => $data['vendor_name'] ?? null,
@@ -213,10 +223,12 @@ class CarbonEntryService
 
             $factor = EmissionFactor::where('id', $data['emission_factor_id'])
                 ->where('is_active', true)
+                ->sharedLock()
                 ->firstOrFail();
 
-            $co2eKg = $this->calculate($data['quantity'], (float) $factor->factor_value);
             $date = Carbon::parse($data['entry_date']);
+            $factorValue = $factor->valueOn($date);
+            $co2eKg = $this->calculate($data['quantity'], (float) $factorValue);
 
             $entry->update([
                 'emission_factor_id'    => $factor->id,
@@ -227,7 +239,7 @@ class CarbonEntryService
                 'period_year'           => $date->year,
                 'quantity'              => $data['quantity'],
                 'source_unit'           => $factor->source_unit,
-                'emission_factor_value' => $factor->factor_value,
+                'emission_factor_value' => $factorValue,
                 'co2e_kg'               => $co2eKg,
                 'description'           => $data['description'] ?? null,
                 'vendor_name'           => $data['vendor_name'] ?? null,
