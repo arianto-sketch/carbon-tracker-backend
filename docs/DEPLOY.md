@@ -34,7 +34,7 @@ Internet ──► caddy :443 (opsional, HTTPS otomatis) ──► web :8080 (ng
 - `git`, `make`, dan `openssl`, mis. `sudo apt install git make openssl`.
 - Domain yang record DNS-nya mengarah ke IP server. Ini wajib untuk HTTPS.
 - Akun SMTP untuk email notifikasi.
-- Firewall hanya membuka port 22, 80, dan 443, mis. `ufw allow OpenSSH && ufw allow 80,443/tcp && ufw enable`.
+- Firewall untuk SSH, mis. `ufw allow OpenSSH && ufw allow 80,443/tcp && ufw enable`. Catatan: port yang dibuka Docker melewati aturan ufw. Yang aman di sini karena compose hanya membuka 80/443 (atau `HTTP_PORT`).
 
 ## Instalasi pertama
 
@@ -42,21 +42,22 @@ Internet ──► caddy :443 (opsional, HTTPS otomatis) ──► web :8080 (ng
 git clone https://github.com/arianto-sketch/carbon-tracker-backend.git carbon-tracker
 cd carbon-tracker
 make frontend          # clone repo frontend ke ./carbon-tracker-frontend
-make .env              # membuat .env dari .env.production.example (chmod 600)
+make .env              # membuat .env (chmod 600) lalu sengaja berhenti agar nilainya diisi dulu
 make key               # salin hasilnya ke APP_KEY di .env
 ```
 
 Lalu buka `.env` dan isi semua nilai `<...>`:
 
 - `APP_URL`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`: `https://domain-anda`
-- `DB_PASSWORD` dan `DB_ROOT_PASSWORD`: password acak yang panjang, mis. hasil `openssl rand -base64 24`. `DB_USERNAME` tidak boleh `root`.
+- `DB_PASSWORD`: password acak yang panjang, mis. hasil `openssl rand -base64 24`. `DB_USERNAME` tidak boleh `root`.
+  Password root MySQL tidak ada di `.env`. `make setup` membuatnya acak di `secrets/db_root_password` (izin `600`), dan container app tidak menerimanya.
 - `MAIL_*`: kredensial SMTP
 - HTTPS: isi `DOMAIN` dan `ACME_EMAIL`, lalu aktifkan baris `COMPOSE_FILE=compose.yml:compose.tls.yml`. Tanpa baris itu, aplikasi berjalan di HTTP port `HTTP_PORT`. Itu cocok bila TLS diurus di luar Docker, mis. load balancer atau Cloudflare.
 
 Setelah itu jalankan:
 
 ```bash
-make setup                                                # build image, migrate, start semua service
+make setup                                                # password root, build image, migrate, start semua service
 make create-admin EMAIL=admin@domain-anda NAME="Admin"   # password diketik, minimal 12 karakter
 make seed-master                                         # kategori dan faktor emisi bawaan (butuh admin)
 make ps                                                  # semua service harus "healthy"/"running"
@@ -72,15 +73,17 @@ Buka `https://domain-anda`, login sebagai admin, lalu tambahkan user lain di men
 make deploy
 ```
 
-Perintah ini menjalankan `git pull` untuk backend dan frontend, build image, menjalankan migration dengan image baru, lalu mengganti container. Worker antrean diberi waktu 60 detik untuk menyelesaikan job yang sedang berjalan.
+Perintah ini menjalankan `git pull` untuk backend dan frontend, build image, **backup**, lalu migration dengan image baru, lalu mengganti container. Worker antrean diberi waktu 60 detik untuk menyelesaikan job yang sedang berjalan.
+
+Selama migration berjalan, container lama masih melayani request. Karena itu migration sebaiknya hanya **menambah**: kolom dan tabel baru boleh, sedangkan menghapus atau mengganti nama kolom yang masih dipakai kode lama dilakukan di rilis berikutnya.
 
 - **Memakai tag:** isi `APP_VERSION` di `.env` dengan versi rilis (mis. `v1.4.0`) sebelum `make deploy`. Image lama tetap tersimpan dengan tag versinya.
 - **Rollback:**
   1. Checkout versi sebelumnya (`git checkout v1.3.0`, begitu juga di folder frontend bila perlu).
   2. Kembalikan `APP_VERSION`.
   3. Jalankan `make build up`.
-  4. Bila rilis yang dibatalkan berisi migration yang mengubah data, pulihkan database dari backup sebelum rilis (lihat bagian berikut).
-  - Dianjurkan menjalankan `make backup` tepat sebelum `make deploy`.
+  4. Bila rilis yang dibatalkan berisi migration, pulihkan database dari backup yang dibuat `make deploy` sebelum migrate (lihat bagian berikut).
+  5. Setelah perbaikan siap, kembali ke branch utama (`git checkout master`, dan `main` di folder frontend) sebelum `make deploy` berikutnya. Kalau tidak, `git pull` gagal karena posisi checkout tidak berada di branch.
 
 ## Backup dan restore
 
@@ -96,14 +99,15 @@ Service `backup` berjalan terus:
 | --- | --- |
 | `make backup` | Backup sekarang |
 | `make backups` | Daftar file backup |
-| `make restore FILE=db-20261014-190000.sql.gz` | Pulihkan database. Service app/queue/scheduler dihentikan sementara. Minta konfirmasi `YA` |
+| `make restore FILE=db-20261014-190000.sql.gz` | Pulihkan database persis seperti isi backup. Kondisi saat ini disimpan dulu sebagai `db-...-pre-restore.sql.gz`, lalu semua tabel dihapus (termasuk tabel dari migration setelah backup) dan isi backup dimuat. Service app/queue/scheduler dihentikan sementara. Minta konfirmasi `YA` |
 | `make restore-storage FILE=storage-20261014-190000.tar.gz` | Pulihkan file lampiran |
 
 **Penting:**
 
+- **File backup hanya bisa dibaca root** (izin `600`), karena isinya data pribadi user (email, hash password). Gunakan `sudo` untuk menyalinnya.
 - **Folder `backups/` ada di server yang sama.** Backup ini tidak melindungi dari server yang rusak atau hilang. Salin secara berkala ke lokasi lain, mis. dengan cron `rclone sync ./backups remote:carbon-tracker-backups` atau `rsync` ke server lain. Isinya data pribadi user, jadi simpan di tempat yang terenkripsi dan aksesnya terbatas.
 - **Uji restore minimal sebulan sekali.** Jalankan stack yang sama di server atau VM lain, salin satu pasang file backup ke `backups/`, lalu jalankan `make restore` dan `make restore-storage`, dan pastikan data bisa dibuka di aplikasi.
-- Restore database menimpa tabel yang ada dengan isi backup. Data yang dibuat setelah waktu backup akan hilang.
+- Restore mengembalikan database ke kondisi saat backup. Data yang dibuat setelah waktu backup hilang, tetapi masih ada di file `*-pre-restore.sql.gz`.
 
 ## Monitoring error (Sentry)
 
@@ -112,7 +116,7 @@ Sentry bersifat opsional dan hanya aktif bila DSN diisi:
 - **Backend:** isi `SENTRY_DSN` di `.env`, lalu `make up`. Container dibuat ulang dan konfigurasi dibaca lagi. Error yang dilaporkan Laravel ikut terkirim.
 - **Frontend:** isi `VITE_SENTRY_DSN`, lalu `make build up`. DSN dimasukkan saat build SPA.
 - `SENTRY_TRACES_SAMPLE_RATE` (mis. `0.1`) mengaktifkan pelacakan performa. Kosongkan bila tidak dipakai.
-- Data pribadi (IP, cookie, user) tidak dikirim. `SENTRY_SEND_DEFAULT_PII` bernilai default `false`.
+- Data pribadi tidak dikirim. Backend: IP, cookie, dan user dimatikan (`SENTRY_SEND_DEFAULT_PII=false`), dan body request (yang berisi password saat login) tidak pernah dilampirkan. Frontend: data user, cookie, header (token API), body, dan query string dimatikan. Untuk menyamarkan IP pengirim, aktifkan juga opsi *Prevent Storing of IP Addresses* di pengaturan project Sentry.
 
 ## Pemeriksaan dan log
 
@@ -124,7 +128,8 @@ Sentry bersifat opsional dan hanya aktif bila DSN diisi:
 ## Keamanan
 
 - `.env` berisi semua rahasia. Pastikan izinnya `600` dan file ini tidak pernah di-commit.
-- Karena `env_file`, container app, queue, dan scheduler menerima seluruh isi `.env`, termasuk `DB_ROOT_PASSWORD`. Bila ingin lebih ketat, ganti password root setelah instalasi pertama dan hapus variabelnya dari `.env`. Variabel itu hanya dipakai saat volume MySQL masih kosong.
+- Password root MySQL ada di `secrets/db_root_password`, bukan di `.env`. Container app, queue, dan scheduler tidak menerimanya. Password itu hanya dipakai saat volume MySQL pertama kali dibuat.
+- IP klien di audit log dan rate limit adalah IP koneksi ke nginx, atau IP dari header `X-Forwarded-For` bila koneksi datang dari Caddy (`172.28.0.10`). Bila ada proxy lain di depan (mis. Cloudflare atau load balancer), tambahkan rentang IP proxy itu sebagai `set_real_ip_from` di `docker/web/default.conf`. Tanpa itu, semua user terlihat ber-IP sama dan berbagi batas rate limit. Bila subnet `172.28.0.0/24` bentrok dengan jaringan server, ubah di `compose.yml`, `compose.tls.yml`, dan `docker/web/default.conf`.
 - Perbarui image dasar secara berkala untuk menerima patch keamanan PHP, nginx, dan MySQL: `docker compose build --pull && make up`.
 - MySQL, php-fpm, dan port internal lain tidak dibuka ke host. Hanya `web` atau `caddy` yang menerima koneksi dari luar.
 

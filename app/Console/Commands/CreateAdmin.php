@@ -54,7 +54,7 @@ class CreateAdmin extends Command
         }
 
         User::create([
-            'name'      => (string) $this->option('name'),
+            'name'      => trim((string) $this->option('name')) ?: 'Administrator',
             'email'     => $email,
             'password'  => $password,
             'role'      => 'admin',

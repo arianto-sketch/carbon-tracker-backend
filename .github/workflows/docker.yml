@@ -37,7 +37,6 @@ jobs:
             -e "s|^FRONTEND_URL=.*|FRONTEND_URL=http://localhost:8080|" \
             -e "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=http://localhost:8080|" \
             -e "s|^DB_PASSWORD=.*|DB_PASSWORD=ci-db-password|" \
-            -e "s|^DB_ROOT_PASSWORD=.*|DB_ROOT_PASSWORD=ci-root-password|" \
             -e "s|^MAIL_MAILER=.*|MAIL_MAILER=log|" \
             -e "s|^HTTP_PORT=.*|HTTP_PORT=8080|" \
             .env
@@ -45,12 +44,17 @@ jobs:
       - name: Makefile dan konfigurasi compose
         run: |
           make help
+          make secrets
           make compose-check
           # Override HTTPS (Caddy) juga harus valid
           COMPOSE_FILE=compose.yml:compose.tls.yml docker compose config --quiet
 
-      - name: make setup (build, migrate, start)
-        run: make setup
+      - name: make setup (secrets, build, migrate, start)
+        run: |
+          make setup
+          # Container app tidak boleh menerima password root MySQL
+          ! docker compose exec -T app printenv | grep -q '^MYSQL_ROOT\|^DB_ROOT'
+          test "$(stat -c %a secrets/db_root_password)" = "600"
 
       - name: Uji asap
         run: bash .github/scripts/docker-smoke.sh

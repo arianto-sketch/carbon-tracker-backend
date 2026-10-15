@@ -28,3 +28,6 @@ Thumbs.db
 
 # Hasil backup service backup (compose.yml)
 /backups
+
+# Password root MySQL (make secrets)
+/secrets

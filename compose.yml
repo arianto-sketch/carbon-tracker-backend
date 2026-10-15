@@ -2,16 +2,15 @@
 #   docker compose up -d --build                         -> HTTP di port ${HTTP_PORT:-80}
 #   docker compose -f compose.yml -f compose.tls.yml ...  -> HTTPS otomatis lewat Caddy
 # Development lokal memakai Laragon, jadi tidak ada compose.override.yml.
-# Semua nilai dibaca dari .env (salin dari .env.production.example).
+# Semua nilai dibaca dari .env (salin dari .env.production.example); password root MySQL
+# disimpan terpisah di secrets/db_root_password (dibuat `make secrets`) agar tidak sampai ke app.
 
 name: carbon-tracker
 
-# Konfigurasi bersama app (php-fpm), queue worker, dan scheduler: image yang sama, peran berbeda
+# Konfigurasi bersama app (php-fpm), queue worker, dan scheduler: image yang sama, peran berbeda.
+# Hanya service app yang mem-build image; queue dan scheduler memakai image hasil build itu.
 x-api: &api
   image: ${APP_IMAGE:-carbon-tracker-api}:${APP_VERSION:-local}
-  build:
-    context: .
-    target: prod
   env_file: .env
   environment:
     DB_CONNECTION: mysql
@@ -31,6 +30,9 @@ x-api: &api
 services:
   app:
     <<: *api
+    build:
+      context: .
+      target: prod
     healthcheck:
       test: ["CMD-SHELL", "SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
       interval: 15s
@@ -44,6 +46,7 @@ services:
 
   queue:
     <<: *api
+    pull_policy: never
     # Laporan Excel dan email notifikasi approval diproses di sini
     command: ["php", "artisan", "queue:work", "--tries=3", "--backoff=60", "--max-time=3600", "--sleep=3"]
     # Beri waktu job yang sedang berjalan untuk selesai saat restart/deploy
@@ -55,6 +58,7 @@ services:
 
   scheduler:
     <<: *api
+    pull_policy: never
     # Jadwal di routes/console.php (prune token, purge lampiran, dll.)
     command: ["php", "artisan", "schedule:work"]
     deploy:
@@ -94,7 +98,9 @@ services:
       MYSQL_DATABASE: ${DB_DATABASE:-carbon_tracker}
       MYSQL_USER: ${DB_USERNAME:?DB_USERNAME wajib diisi (bukan root)}
       MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi}
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD wajib diisi}
+      # Hanya dipakai saat volume masih kosong (inisialisasi pertama)
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets: [db_root_password]
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
       - mysql_data:/var/lib/mysql
@@ -133,8 +139,14 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    # Backup yang sedang berjalan diberi waktu selesai saat container dihentikan
+    stop_grace_period: 2m
     restart: unless-stopped
     networks: [internal]
+
+secrets:
+  db_root_password:
+    file: ./secrets/db_root_password
 
 volumes:
   mysql_data:
@@ -142,3 +154,8 @@ volumes:
 
 networks:
   internal:
+    # Subnet tetap: nginx (docker/web/default.conf) hanya mempercayai header X-Forwarded-For dari
+    # Caddy di 172.28.0.10 (compose.tls.yml). Bila bentrok dengan jaringan server, ubah ketiganya.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

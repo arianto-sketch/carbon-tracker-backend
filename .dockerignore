@@ -39,3 +39,6 @@ pint.json
 docs
 compose*.yml
 Makefile
+
+# Rahasia (password root MySQL)
+secrets

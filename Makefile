@@ -15,9 +15,10 @@ MAKEFLAGS += --no-builtin-rules
 # ----- Konfigurasi -----
 
 COMPOSE        ?= docker compose
-FRONTEND_PATH  ?= ./carbon-tracker-frontend
+# Ikut nilai FRONTEND_PATH di .env (yang juga dipakai compose) bila ada
+FRONTEND_PATH  ?= $(or $(shell sed -n 's/^FRONTEND_PATH=//p' .env 2>/dev/null | tail -n 1),./carbon-tracker-frontend)
 FRONTEND_REPO  ?= https://github.com/arianto-sketch/carbon-tracker-frontend.git
-BACKUP_PATH    ?= ./backups
+ROOT_PW_FILE   := secrets/db_root_password
 
 # exec tanpa TTY bila tidak dijalankan dari terminal (script, cron, CI)
 EXEC_TTY := $(shell [ -t 0 ] || echo -T)
@@ -44,7 +45,7 @@ else
 	RESET :=
 endif
 
-.PHONY: help setup frontend key pull build up down restart ps logs shell tinker \
+.PHONY: help setup secrets frontend key pull build up down restart ps logs shell tinker \
         migrate seed-master create-admin deploy \
         backup backups restore restore-storage \
         compose-check test lint format analyse ci
@@ -61,11 +62,20 @@ help: ## Tampilkan daftar perintah
 
 # ----- Setup server (sekali) -----
 
+# Sengaja berhenti (exit 1) setelah membuat .env: nilai <...> harus diisi dulu
 .env:
 	@cp .env.production.example .env
 	@chmod 600 .env
 	@printf "$(YELLOW)→ .env dibuat dari .env.production.example. Isi nilai <...>, lalu jalankan: make key$(RESET)\n"
 	@exit 1
+
+# Password root MySQL hanya untuk inisialisasi; disimpan di luar .env agar tidak ikut ke container app
+$(ROOT_PW_FILE):
+	@mkdir -p $(dir $@) && chmod 700 $(dir $@)
+	@(umask 077 && openssl rand -base64 32 | tr -d '\n' > $@)
+	@printf "$(YELLOW)→ Password root MySQL dibuat di $@$(RESET)\n"
+
+secrets: $(ROOT_PW_FILE) ## Buat password root MySQL acak (sekali, bila belum ada)
 
 $(FRONTEND_PATH)/package.json:
 	git clone $(FRONTEND_REPO) $(FRONTEND_PATH)
@@ -75,7 +85,7 @@ frontend: $(FRONTEND_PATH)/package.json ## Clone repo frontend bila belum ada
 key: ## Buat APP_KEY baru (salin hasilnya ke .env)
 	@echo "APP_KEY=base64:$$(openssl rand -base64 32)"
 
-setup: .env frontend build migrate up ## Instalasi pertama: build, migrate, start semua service
+setup: .env secrets frontend build migrate up ## Instalasi pertama: build, migrate, start semua service
 	@printf "$(GREEN)✓ Stack berjalan.$(RESET) Berikutnya:\n"
 	@printf "  1. make create-admin EMAIL=<email> NAME=\"Nama\"\n"
 	@printf "  2. make seed-master   (kategori dan faktor emisi bawaan; butuh admin)\n"
@@ -101,12 +111,14 @@ seed-master: ## Isi kategori dan faktor emisi bawaan (setelah create-admin; aman
 	$(COMPOSE) run --rm -T app php artisan db:seed --class=EmissionCategorySeeder --force
 	$(COMPOSE) run --rm -T app php artisan db:seed --class=EmissionFactorSeeder --force
 
-deploy: pull build migrate up ## Rilis versi terbaru: pull, build, migrate, restart service
+# Backup dulu: migration bisa mengubah data, dan rollback rilis butuh database sebelum migrate
+deploy: pull build backup migrate up ## Rilis versi terbaru: pull, build, backup, migrate, restart service
 	@printf "$(GREEN)✓ Deploy selesai$(RESET)\n"
 
+# Dari script (tanpa terminal) password dibaca dari stdin: echo "$$PW" | make create-admin EMAIL=...
 create-admin: ## Buat admin. Pakai: make create-admin EMAIL=<email> [NAME="Nama"]
 	@if [ -z "$(EMAIL)" ]; then printf "$(RED)Pakai: make create-admin EMAIL=<email> NAME=\"Nama\"$(RESET)\n"; exit 1; fi
-	$(COMPOSE) exec $(EXEC_TTY) app php artisan app:create-admin "$(EMAIL)" --name="$(NAME)"
+	$(COMPOSE) exec $(EXEC_TTY) app php artisan app:create-admin "$(EMAIL)" --name="$(NAME)" $(if $(EXEC_TTY),--password-stdin,)
 
 # ----- Operasional -----
 
@@ -153,8 +165,8 @@ restore: ## Pulihkan database. Pakai: make restore FILE=db-YYYYmmdd-HHMMSS.sql.g
 
 restore-storage: ## Pulihkan lampiran. Pakai: make restore-storage FILE=storage-YYYYmmdd-HHMMSS.tar.gz
 	@if [ -z "$(FILE)" ]; then printf "$(RED)Pakai: make restore-storage FILE=<storage-*.tar.gz>$(RESET)\n"; exit 1; fi
-	@test -f "$(BACKUP_PATH)/$(FILE)" || { printf "$(RED)Tidak ditemukan: $(BACKUP_PATH)/$(FILE)$(RESET)\n"; exit 1; }
-	$(COMPOSE) exec -T app tar -xzf - -C /var/www/html/storage/app < "$(BACKUP_PATH)/$(FILE)"
+	@# Arsip dibaca service backup (folder backup sama dengan BACKUP_PATH di .env, file hanya bisa dibaca root)
+	$(COMPOSE) run --rm -T --no-deps backup stream "$(FILE)" | $(COMPOSE) exec -T app tar -xzf - -C /var/www/html/storage/app
 	@printf "$(GREEN)✓ Lampiran dipulihkan dari $(FILE)$(RESET)\n"
 
 # ----- Development (host) -----

@@ -25,6 +25,8 @@ class SentryIntegrationTest extends TestCase
     public function test_personal_data_is_not_sent_by_default(): void
     {
         $this->assertFalse((bool) config('sentry.send_default_pii'));
+        // Body request login/tambah user berisi password: tidak pernah dilampirkan ke event
+        $this->assertSame('never', config('sentry.max_request_body_size'));
     }
 
     public function test_reported_exceptions_are_captured_when_sentry_is_configured(): void

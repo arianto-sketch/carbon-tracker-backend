@@ -25,7 +25,10 @@ services:
       web:
         condition: service_healthy
     restart: unless-stopped
-    networks: [internal]
+    networks:
+      internal:
+        # IP tetap: satu-satunya sumber X-Forwarded-For yang dipercaya nginx (docker/web/default.conf)
+        ipv4_address: 172.28.0.10
 
 volumes:
   caddy_data:

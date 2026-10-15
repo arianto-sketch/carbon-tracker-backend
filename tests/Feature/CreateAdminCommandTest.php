@@ -44,6 +44,16 @@ class CreateAdminCommandTest extends TestCase
         $this->assertTrue(Hash::check(self::PASSWORD, User::where('email', 'ci@example.test')->sole()->password));
     }
 
+    public function test_empty_name_falls_back_to_default(): void
+    {
+        $this->artisan('app:create-admin', ['email' => 'ops@example.test', '--name' => '  '])
+            ->expectsQuestion('Password (min. 12 karakter)', self::PASSWORD)
+            ->expectsQuestion('Ulangi password', self::PASSWORD)
+            ->assertSuccessful();
+
+        $this->assertSame('Administrator', User::where('email', 'ops@example.test')->sole()->name);
+    }
+
     public function test_refuses_an_email_that_is_already_registered(): void
     {
         User::factory()->create(['email' => 'ops@example.test']);

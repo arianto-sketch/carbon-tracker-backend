@@ -29,7 +29,8 @@ login() {
 }
 
 step "Admin pertama dan data master"
-echo "$ADMIN_PASSWORD" | docker compose exec -T app php artisan app:create-admin "$ADMIN_EMAIL" --name="CI Admin" --password-stdin
+# Tanpa terminal, make create-admin membaca password dari stdin
+echo "$ADMIN_PASSWORD" | make create-admin EMAIL="$ADMIN_EMAIL" NAME="CI Admin"
 make seed-master
 
 step "nginx: health check, SPA, header keamanan, cache aset"
@@ -39,6 +40,7 @@ curl -fsS "${BASE}/reports/summary" | grep -q 'id="app"' || fail "rute SPA tidak
 curl -fsSI "${BASE}/" | grep -qi '^x-frame-options: DENY' || fail "header X-Frame-Options tidak ada"
 asset=$(curl -fsS "${BASE}/" | grep -o '/assets/[^"]*\.js' | head -n 1)
 curl -fsSI "${BASE}${asset}" | grep -qi '^cache-control: max-age=31536000' || fail "aset ${asset} tidak di-cache lama"
+curl -fsS -o /dev/null -D - -H 'Accept-Encoding: gzip' "${BASE}${asset}" | grep -qi '^content-encoding: gzip' || fail "aset JS tidak dikompres gzip"
 
 step "API lewat nginx: login, profil, faktor emisi"
 TOKEN=$(login)
@@ -64,16 +66,23 @@ sudo touch "${BACKUP_PATH}/db-20000101-000000.sql.gz"
 make backup
 db_file=$(ls -t "${BACKUP_PATH}"/db-*.sql.gz | head -n 1)
 storage_file=$(ls -t "${BACKUP_PATH}"/storage-*.tar.gz | head -n 1)
-gzip -t "$db_file"
-zcat "$db_file" | grep -q 'CREATE TABLE `users`' || fail "dump tidak berisi tabel users"
-tar -tzf "$storage_file" > /dev/null
+# Berisi data pribadi: hanya root yang boleh membaca
+[ "$(sudo stat -c %a "$db_file")" = "600" ] || fail "file backup bisa dibaca user lain"
+sudo gzip -t "$db_file"
+sudo zcat "$db_file" | grep -q 'CREATE TABLE `users`' || fail "dump tidak berisi tabel users"
+sudo tar -tzf "$storage_file" > /dev/null
 [ ! -e "${BACKUP_PATH}/db-20000101-000000.sql.gz" ] || fail "backup lebih dari 14 hari tidak dihapus"
 
 step "Restore: data setelah backup hilang, data sebelum backup kembali"
+db_user=$(sed -n 's/^DB_USERNAME=//p' .env); db_pass=$(sed -n 's/^DB_PASSWORD=//p' .env); db_name=$(sed -n 's/^DB_DATABASE=//p' .env)
+docker compose exec -T -e MYSQL_PWD="$db_pass" mysql mysql -u "$db_user" "$db_name" -e 'CREATE TABLE dibuat_setelah_backup (id INT)'
 api POST users '{"name":"Setelah Backup","email":"setelah-backup@example.test","password":"rahasia123","password_confirmation":"rahasia123","role":"viewer"}' > /dev/null
 make restore FILE="$(basename "$db_file")" CONFIRM=YA
 TOKEN=$(login)
 [ "$(api GET 'users?search=setelah-backup' | jq '.meta.total')" = "0" ] || fail "user yang dibuat setelah backup masih ada"
+tables=$(docker compose exec -T -e MYSQL_PWD="$db_pass" mysql mysql -u "$db_user" "$db_name" -N -e "SHOW TABLES LIKE 'dibuat_setelah_backup'")
+[ -z "$tables" ] || fail "tabel yang dibuat setelah backup masih ada"
+ls "${BACKUP_PATH}"/db-*-pre-restore.sql.gz > /dev/null || fail "kondisi sebelum restore tidak di-backup"
 make restore-storage FILE="$(basename "$storage_file")"
 
 step "Semua pemeriksaan lolos"
