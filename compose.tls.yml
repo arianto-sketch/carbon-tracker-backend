@@ -1,0 +1,32 @@
+# HTTPS otomatis (Let's Encrypt) lewat Caddy di depan service web.
+#   docker compose -f compose.yml -f compose.tls.yml up -d
+# Syarat: DNS ${DOMAIN} sudah mengarah ke IP server, port 80 dan 443 terbuka.
+# Butuh Docker Compose >= 2.24 (untuk !reset).
+
+services:
+  web:
+    # Tidak dibuka langsung ke internet; hanya diakses Caddy di jaringan internal
+    ports: !reset []
+
+  caddy:
+    image: caddy:${CADDY_VERSION:-2.8-alpine}
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN wajib diisi untuk HTTPS}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL wajib diisi untuk HTTPS}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [internal]
+
+volumes:
+  caddy_data:
+  caddy_config:
