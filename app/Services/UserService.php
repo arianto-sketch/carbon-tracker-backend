@@ -28,6 +28,23 @@ class UserService
     }
 
     /**
+     * Pencarian user aktif untuk ditambahkan ke project (owner PM/admin), hanya kolom yang perlu.
+     *
+     * @return array<int, array{id: int, name: string, email: string, role: string}>
+     */
+    public function lookup(string $search, int $limit = 10): array
+    {
+        $query = User::query()->where('is_active', true);
+        Like::anyContains($query, ['name', 'email'], $search);
+
+        return $query->orderBy('name')
+            ->limit($limit)
+            ->get(['id', 'name', 'email', 'role'])
+            ->map(fn (User $user) => $user->only(['id', 'name', 'email', 'role']))
+            ->all();
+    }
+
+    /**
      * Riwayat perubahan akun dari audit_logs (ditulis UserObserver), terbaru di atas, maksimal HISTORY_LIMIT entri.
      *
      * @return array<int, array<string, mixed>>

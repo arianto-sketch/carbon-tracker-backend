@@ -16,6 +16,18 @@ class UserController extends Controller
 {
     public function __construct(private UserService $service) {}
 
+    /** Admin dan PM (calon owner project) mencari user untuk dijadikan anggota project */
+    public function lookup(Request $request): JsonResponse
+    {
+        if ($request->user()->isViewer()) {
+            return response()->json(['message' => 'Akses ditolak.'], 403);
+        }
+
+        $search = $request->validate(['search' => ['required', 'string', 'min:2', 'max:100']])['search'];
+
+        return response()->json(['data' => $this->service->lookup($search)]);
+    }
+
     public function history(int $id): JsonResponse
     {
         return response()->json(['data' => $this->service->history(User::findOrFail($id))]);

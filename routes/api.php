@@ -35,6 +35,9 @@ Route::prefix('v1')->group(function () {
         });
 
         // Manajemen user (admin)
+        // Bukan admin-only: owner project (PM) mencari user untuk ditambahkan sebagai anggota
+        Route::get('/users/lookup', [UserController::class, 'lookup']);
+
         Route::prefix('users')->middleware('admin')->group(function () {
             Route::get('/', [UserController::class, 'index']);
             Route::post('/', [UserController::class, 'store']);
