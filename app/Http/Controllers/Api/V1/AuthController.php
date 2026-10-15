@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ChangePasswordRequest;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Http\Resources\ProfileResource;
 use App\Services\AuthService;
@@ -31,6 +33,20 @@ class AuthController extends Controller
             ],
             'message' => 'Login berhasil.',
         ]);
+    }
+
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $this->authService->requestPasswordReset($request->validated('email'));
+
+        return response()->json(['message' => 'Jika email terdaftar dan aktif, link reset password sudah dikirim.']);
+    }
+
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $this->authService->resetPassword($request->validated());
+
+        return response()->json(['message' => 'Password berhasil direset. Silakan login dengan password baru.']);
     }
 
     public function logout(Request $request): JsonResponse

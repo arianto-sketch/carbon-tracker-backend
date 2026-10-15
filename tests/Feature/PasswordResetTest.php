@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Notifications\ResetPasswordNotification;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -77,6 +78,7 @@ class PasswordResetTest extends TestCase
 
         $this->assertTrue(Hash::check('baru-sekali-123', $this->user->fresh()->password));
         $this->assertSame(0, $this->user->tokens()->count());
+        $this->assertTrue(AuditLog::where('action', 'password_reset')->where('model_id', $this->user->id)->where('user_id', $this->user->id)->exists());
         $this->postJson('/api/v1/auth/login', ['email' => 'budi@example.test', 'password' => 'baru-sekali-123'])->assertOk();
 
         $this->postJson('/api/v1/auth/reset-password', $payload)
@@ -116,6 +118,7 @@ class PasswordResetTest extends TestCase
             ->assertJsonPath('message', 'Link reset password dikirim ke budi@example.test.');
 
         Notification::assertSentTo($this->user, ResetPasswordNotification::class);
+        $this->assertTrue(AuditLog::where('action', 'password_reset_link_sent')->where('model_id', $this->user->id)->where('user_id', $admin->id)->exists());
     }
 
     public function test_reset_link_by_admin_is_refused_for_inactive_users_and_non_admins(): void

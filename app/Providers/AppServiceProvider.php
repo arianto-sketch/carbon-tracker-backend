@@ -33,7 +33,16 @@ class AppServiceProvider extends ServiceProvider
                 ], 429, $headers));
         });
 
-        // Batas umum endpoint ber-auth, dihitung per user (rute tamu hanya login, yang punya limiter sendiri)
+        // Lupa/reset password (rute tamu): maks 5 permintaan per menit per IP
+        RateLimiter::for('password-reset', function (Request $request) {
+            return Limit::perMinute(5)
+                ->by('password-reset|'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Terlalu banyak permintaan reset password. Coba lagi nanti.',
+                ], 429, $headers));
+        });
+
+        // Batas umum endpoint ber-auth, dihitung per user (rute tamu punya limiter sendiri)
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute((int) config('app.api_rate_limit'))
                 ->by($request->user()?->id ?: $request->ip())

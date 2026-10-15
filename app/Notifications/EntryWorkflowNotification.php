@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\CarbonEntry;
 use App\Models\User;
+use App\Support\Markdown;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -87,25 +88,16 @@ class EntryWorkflowNotification extends Notification implements ShouldQueue
     {
         $mail = (new MailMessage)
             ->subject(strtr(self::SUBJECTS[$this->type], [':project' => $this->projectName()]))
-            ->greeting('Halo '.self::plain($notifiable->name).',')
-            ->line(self::plain($this->message()));
+            ->greeting('Halo '.Markdown::escape($notifiable->name).',')
+            ->line(Markdown::escape($this->message()));
 
         if ($this->reason !== null) {
-            $mail->line('Alasan: '.self::plain($this->reason));
+            $mail->line('Alasan: '.Markdown::escape($this->reason));
         }
 
         return $mail
             ->action('Buka project', rtrim((string) config('app.frontend_url'), '/')."/projects/{$this->entry->project_id}")
             ->line('Anda menerima email ini karena notifikasi email aktif. Notifikasi email bisa dimatikan di halaman Profil.');
-    }
-
-    /**
-     * Isi email dirender sebagai markdown: teks bebas (alasan, nama) di-escape supaya tidak bisa
-     * menyisipkan tautan atau format, mis. "[klik](https://...)".
-     */
-    private static function plain(string $text): string
-    {
-        return preg_replace('/([\\\\`*_\[\]()#<>])/', '\\\\$1', $text);
     }
 
     private function message(): string

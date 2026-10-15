@@ -222,7 +222,7 @@ class CarbonEntryController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isAdmin() && $project->getUserRole($user->id) !== 'owner') {
+        if (! $user->isAdmin() && $project->effectiveRole($user) !== 'owner') {
             abort(403, 'Hanya owner atau admin yang bisa me-review entry.');
         }
 

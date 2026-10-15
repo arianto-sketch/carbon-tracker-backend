@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\TransientToken;
@@ -85,5 +88,57 @@ class AuthService
         $user->tokens()
             ->when($current instanceof PersonalAccessToken, fn ($q) => $q->whereKeyNot($current->getKey()))
             ->delete();
+    }
+
+    /**
+     * Lupa password: kirim link reset hanya bila email milik akun aktif. Tidak ada beda respons
+     * untuk email yang tidak terdaftar, supaya daftar email user tidak bisa ditebak.
+     */
+    public function requestPasswordReset(string $email): void
+    {
+        $user = User::whereRaw('LOWER(email) = ?', [Str::lower(trim($email))])->where('is_active', true)->first();
+
+        if ($user) {
+            // Broker membatasi 1 link per user per menit; permintaan yang terlalu cepat diabaikan diam-diam
+            Password::broker()->sendResetLink(['email' => $user->email]);
+        }
+    }
+
+    /** Admin mengirim link reset ke user (mis. user lupa password dan tidak bisa membuka halaman lupa password) */
+    public function sendPasswordResetLink(User $user, User $admin): void
+    {
+        if (! $user->is_active) {
+            throw ValidationException::withMessages([
+                'user' => ['User nonaktif tidak bisa menerima link reset password. Aktifkan dulu akunnya.'],
+            ]);
+        }
+
+        if (Password::broker()->sendResetLink(['email' => $user->email]) === Password::RESET_THROTTLED) {
+            throw ValidationException::withMessages([
+                'user' => ['Link reset baru saja dikirim. Tunggu satu menit sebelum mengirim lagi.'],
+            ]);
+        }
+
+        AuditLog::record('password_reset_link_sent', $user, actorId: $admin->id);
+    }
+
+    /** @param  array{token: string, email: string, password: string}  $data */
+    public function resetPassword(array $data): void
+    {
+        $status = Password::broker()->reset(
+            ['email' => $data['email'], 'token' => $data['token'], 'password' => $data['password']],
+            function (User $user, string $password) {
+                $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
+                // Semua sesi lama dicabut: siapa pun yang masih memegang token lama harus login ulang
+                $user->tokens()->delete();
+                AuditLog::record('password_reset', $user, actorId: $user->id);
+            },
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages([
+                'email' => ['Link reset password tidak valid atau sudah kedaluwarsa.'],
+            ]);
+        }
     }
 }

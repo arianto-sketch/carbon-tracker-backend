@@ -99,10 +99,10 @@ class ViewerReadOnlyTest extends TestCase
 
     public function test_changing_the_only_owner_to_viewer_is_refused(): void
     {
-        $this->actingAs($this->admin, 'sanctum')->putJson("/api/v1/users/{$this->owner->id}", ['role' => 'viewer'])
+        $response = $this->actingAs($this->admin, 'sanctum')->putJson("/api/v1/users/{$this->owner->id}", ['role' => 'viewer'])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('role')
-            ->assertJsonFragment(['Project PRJ-1']);
+            ->assertJsonValidationErrors('role');
+        $this->assertStringContainsString('Project PRJ-1', $response->json('errors.role.0'));
 
         $this->assertSame('pm', $this->owner->fresh()->role);
         $this->assertSame('owner', $this->roleOf($this->owner));

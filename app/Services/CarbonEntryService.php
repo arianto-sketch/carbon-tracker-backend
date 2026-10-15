@@ -338,7 +338,8 @@ class CarbonEntryService
     private function notifyOwners(CarbonEntry $entry, User $submitter): void
     {
         $ownerIds = ProjectMember::where('project_id', $entry->project_id)->where('role', 'owner')->pluck('user_id');
-        $owners = User::whereIn('id', $ownerIds)->whereKeyNot($submitter->id)->where('is_active', true)->get();
+        // Viewer global tidak bisa me-review, jadi tidak perlu diberi tahu
+        $owners = User::whereIn('id', $ownerIds)->whereKeyNot($submitter->id)->where('is_active', true)->where('role', '!=', 'viewer')->get();
 
         $this->sendSafely($owners, new EntryWorkflowNotification('entry_submitted', $entry, $submitter));
     }

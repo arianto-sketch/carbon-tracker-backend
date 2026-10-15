@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -71,5 +72,17 @@ class User extends Authenticatable
     public function isPm(): bool
     {
         return $this->role === 'pm';
+    }
+
+    /** Role global Viewer: hanya bisa melihat, apa pun role-nya di project */
+    public function isViewer(): bool
+    {
+        return $this->role === 'viewer';
+    }
+
+    /** Link reset dikirim lewat antrean, mengarah ke halaman reset di SPA */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
     }
 }

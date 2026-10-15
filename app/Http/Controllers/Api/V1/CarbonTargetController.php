@@ -97,7 +97,7 @@ class CarbonTargetController extends Controller
 
     private function authorizeOwnerOrAdmin(Request $request, Project $project): void
     {
-        $userRole = $project->getUserRole($request->user()->id);
+        $userRole = $project->effectiveRole($request->user());
         if (! $request->user()->isAdmin() && $userRole !== 'owner') {
             abort(403, 'Hanya owner atau admin yang bisa mengelola target emisi.');
         }

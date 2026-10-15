@@ -17,6 +17,8 @@ Route::prefix('v1')->group(function () {
 
     // Auth — public
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+    Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:password-reset');
+    Route::post('/auth/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:password-reset');
 
     // Auth — protected
     Route::middleware(['auth:sanctum', 'active', 'throttle:api'])->group(function () {
@@ -38,6 +40,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/', [UserController::class, 'store']);
             Route::put('/{id}', [UserController::class, 'update']);
             Route::get('/{id}/history', [UserController::class, 'history']);
+            Route::post('/{id}/password-reset-link', [UserController::class, 'sendPasswordResetLink']);
         });
 
         // Emission Categories (read-only, semua user)

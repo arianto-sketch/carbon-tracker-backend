@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\ProjectMember;
 use App\Models\User;
 use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -72,7 +73,13 @@ class UserService
             ]);
         }
 
-        DB::transaction(function () use ($user, $data, $deactivating, $demoting) {
+        $toViewer = ($data['role'] ?? null) === 'viewer' && ! $user->isViewer();
+
+        DB::transaction(function () use ($user, $data, $actor, $deactivating, $demoting, $toViewer) {
+            if ($toViewer) {
+                $this->demoteMembershipsToViewer($user, $actor);
+            }
+
             if ($deactivating || $demoting) {
                 // Kunci semua admin aktif: dua admin yang saling menurunkan/menonaktifkan secara
                 // bersamaan diproses bergiliran, jadi yang kedua melihat jumlah admin terbaru.
@@ -94,5 +101,41 @@ class UserService
         });
 
         return $user->fresh();
+    }
+
+    /**
+     * Role global Viewer hanya boleh membaca: membership owner/member diturunkan menjadi viewer (tercatat
+     * di audit log). Ditolak bila user satu-satunya owner sebuah project (aturan minimal satu owner).
+     */
+    private function demoteMembershipsToViewer(User $user, User $actor): void
+    {
+        $memberships = ProjectMember::with('project')
+            ->where('user_id', $user->id)
+            ->whereIn('role', ['owner', 'member'])
+            ->lockForUpdate()
+            ->get();
+
+        // Owner lain yang dihitung hanya yang bukan viewer global (viewer tidak bisa mengelola project)
+        $soleOwnerOf = $memberships
+            ->filter(fn (ProjectMember $m) => $m->role === 'owner' && $m->project !== null)
+            ->reject(fn (ProjectMember $m) => ProjectMember::where('project_id', $m->project_id)
+                ->where('role', 'owner')
+                ->whereKeyNot($m->getKey())
+                ->whereHas('user', fn ($q) => $q->where('role', '!=', 'viewer'))
+                ->exists());
+
+        if ($soleOwnerOf->isNotEmpty()) {
+            $projects = $soleOwnerOf->map(fn (ProjectMember $m) => $m->project?->name)->implode(', ');
+
+            throw ValidationException::withMessages([
+                'role' => ["Tidak bisa dijadikan Viewer: user ini satu-satunya owner di project {$projects}. Tunjuk owner lain terlebih dahulu."],
+            ]);
+        }
+
+        foreach ($memberships as $membership) {
+            $oldRole = $membership->role;
+            $membership->update(['role' => 'viewer']);
+            AuditLog::record('updated', $membership, ['role' => $oldRole], ['role' => 'viewer'], $actor->id);
+        }
     }
 }

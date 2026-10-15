@@ -90,6 +90,8 @@ class ProjectService
                 ]);
             }
 
+            $this->ensureRoleAllowedFor(User::findOrFail($userId), $role);
+
             return ProjectMember::create([
                 'project_id' => $project->id,
                 'user_id' => $userId,
@@ -107,6 +109,7 @@ class ProjectService
             $lockedOwners = $this->lockedOwners($project);
             $this->ensureCanManageMembers($actor, $lockedOwners);
             $member = $this->lockedMember($project, $userId);
+            $this->ensureRoleAllowedFor($member->user, $role);
 
             if ($member->role === 'owner' && $role !== 'owner' && $lockedOwners->count() <= 1) {
                 throw ValidationException::withMessages([
@@ -157,11 +160,22 @@ class ProjectService
      */
     private function ensureCanManageMembers(User $actor, Collection $lockedOwners): void
     {
-        if ($actor->isAdmin() || $lockedOwners->contains('user_id', $actor->id)) {
+        // Viewer global tidak bisa mengelola walau membership lamanya masih owner
+        if ($actor->isAdmin() || (! $actor->isViewer() && $lockedOwners->contains('user_id', $actor->id))) {
             return;
         }
 
         throw new AuthorizationException('Hanya owner atau admin yang bisa mengelola member project.');
+    }
+
+    /** User ber-role global Viewer hanya boleh menjadi viewer di project */
+    private function ensureRoleAllowedFor(User $user, string $role): void
+    {
+        if ($user->isViewer() && $role !== 'viewer') {
+            throw ValidationException::withMessages([
+                'role' => ['User dengan role Viewer hanya bisa menjadi viewer di project. Ubah role global-nya lebih dulu.'],
+            ]);
+        }
     }
 
     private function lockedMember(Project $project, int $userId): ProjectMember
