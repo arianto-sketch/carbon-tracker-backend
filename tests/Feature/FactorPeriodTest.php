@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 use Tests\Concerns\BuildsCarbonData;
 use Tests\TestCase;
 
@@ -42,7 +43,7 @@ class FactorPeriodTest extends TestCase
         return "/api/v1/emission-factors/{$this->pln->id}/values{$suffix}";
     }
 
-    private function addPeriod(string $validFrom, float $value): \Illuminate\Testing\TestResponse
+    private function addPeriod(string $validFrom, float $value): TestResponse
     {
         return $this->actingAs($this->admin, 'sanctum')->postJson($this->url(), ['valid_from' => $validFrom, 'factor_value' => $value, 'source' => 'ESDM 2025']);
     }

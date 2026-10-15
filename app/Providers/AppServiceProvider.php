@@ -63,7 +63,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Id di URL harus angka yang muat di int: "abc" atau 20 digit menjadi 404, bukan TypeError (500)
-        foreach (['id', 'userId', 'projectId', 'jobId'] as $parameter) {
+        foreach (['id', 'userId', 'projectId', 'jobId', 'valueId'] as $parameter) {
             Route::pattern($parameter, '[0-9]{1,18}');
         }
     }
