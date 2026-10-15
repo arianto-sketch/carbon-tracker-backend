@@ -1,0 +1,44 @@
+# Konteks build image API (Dockerfile di root)
+
+.git
+.github
+.vscode
+.idea
+
+# Rahasia dan konfigurasi lokal (env dibaca container saat jalan, bukan dari image)
+.env
+.env.*
+!.env.example
+auth.json
+
+# Dependency dipasang ulang di dalam image
+vendor
+node_modules
+
+# Repo frontend (dibangun terpisah oleh docker/web/Dockerfile) dan hasil backup
+carbon-tracker-frontend
+backups
+
+# Data runtime lokal; struktur foldernya dibuat ulang di Dockerfile
+storage/app/private/*
+storage/app/public/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*.php
+
+# Tidak dibutuhkan saat runtime
+tests
+phpunit.xml
+phpstan.neon
+pint.json
+.phpunit.cache
+.phpunit.result.cache
+docs
+compose*.yml
+Makefile
+
+# Rahasia (password root MySQL)
+secrets

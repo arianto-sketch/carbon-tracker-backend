@@ -25,3 +25,9 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Hasil backup service backup (compose.yml)
+/backups
+
+# Password root MySQL (make secrets)
+/secrets

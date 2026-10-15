@@ -1,0 +1,161 @@
+# Stack production Carbon Tracker untuk satu VPS (lihat docs/DEPLOY.md).
+#   docker compose up -d --build                         -> HTTP di port ${HTTP_PORT:-80}
+#   docker compose -f compose.yml -f compose.tls.yml ...  -> HTTPS otomatis lewat Caddy
+# Development lokal memakai Laragon, jadi tidak ada compose.override.yml.
+# Semua nilai dibaca dari .env (salin dari .env.production.example); password root MySQL
+# disimpan terpisah di secrets/db_root_password (dibuat `make secrets`) agar tidak sampai ke app.
+
+name: carbon-tracker
+
+# Konfigurasi bersama app (php-fpm), queue worker, dan scheduler: image yang sama, peran berbeda.
+# Hanya service app yang mem-build image; queue dan scheduler memakai image hasil build itu.
+x-api: &api
+  image: ${APP_IMAGE:-carbon-tracker-api}:${APP_VERSION:-local}
+  env_file: .env
+  environment:
+    DB_CONNECTION: mysql
+    DB_HOST: mysql
+    DB_PORT: "3306"
+    # Log ke stdout/stderr container: lihat dengan `docker compose logs`
+    LOG_CHANNEL: stderr
+  volumes:
+    # Lampiran entri dan file laporan; harus persisten dan dibagi app + queue
+    - app_storage:/var/www/html/storage/app
+  depends_on:
+    mysql:
+      condition: service_healthy
+  restart: unless-stopped
+  networks: [internal]
+
+services:
+  app:
+    <<: *api
+    build:
+      context: .
+      target: prod
+    healthcheck:
+      test: ["CMD-SHELL", "SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEMORY_LIMIT:-512M}
+
+  queue:
+    <<: *api
+    pull_policy: never
+    # Laporan Excel dan email notifikasi approval diproses di sini
+    command: ["php", "artisan", "queue:work", "--tries=3", "--backoff=60", "--max-time=3600", "--sleep=3"]
+    # Beri waktu job yang sedang berjalan untuk selesai saat restart/deploy
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: ${QUEUE_MEMORY_LIMIT:-512M}
+
+  scheduler:
+    <<: *api
+    pull_policy: never
+    # Jadwal di routes/console.php (prune token, purge lampiran, dll.)
+    command: ["php", "artisan", "schedule:work"]
+    deploy:
+      resources:
+        limits:
+          memory: ${SCHEDULER_MEMORY_LIMIT:-256M}
+
+  web:
+    image: ${WEB_IMAGE:-carbon-tracker-web}:${APP_VERSION:-local}
+    build:
+      context: ./docker/web
+      additional_contexts:
+        # Repo carbon-tracker-frontend (clone terpisah)
+        frontend: ${FRONTEND_PATH:-./carbon-tracker-frontend}
+      args:
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    ports:
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:8080"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/up >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-128M}
+
+  mysql:
+    image: mysql:${MYSQL_VERSION:-8.4}
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-carbon_tracker}
+      MYSQL_USER: ${DB_USERNAME:?DB_USERNAME wajib diisi (bukan root)}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi}
+      # Hanya dipakai saat volume masih kosong (inisialisasi pertama)
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets: [db_root_password]
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Tidak ada port yang dibuka ke luar; hanya service di jaringan internal yang bisa terhubung
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: ${MYSQL_MEMORY_LIMIT:-1G}
+
+  backup:
+    # Image MySQL yang sama dengan server: versi mysqldump selalu cocok
+    image: mysql:${MYSQL_VERSION:-8.4}
+    entrypoint: ["bash", "/opt/backup/backup.sh"]
+    command: ["schedule"]
+    environment:
+      DB_HOST: mysql
+      DB_DATABASE: ${DB_DATABASE:-carbon_tracker}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME wajib diisi}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi}
+      # Jam backup harian dalam UTC (19:00 UTC = 02:00 WIB) dan masa simpan
+      BACKUP_TIME_UTC: ${BACKUP_TIME_UTC:-19:00}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./docker/backup:/opt/backup:ro
+      - ${BACKUP_PATH:-./backups}:/backups
+      # Lampiran ikut di-backup (read-only)
+      - app_storage:/storage:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    # Backup yang sedang berjalan diberi waktu selesai saat container dihentikan
+    stop_grace_period: 2m
+    restart: unless-stopped
+    networks: [internal]
+
+secrets:
+  db_root_password:
+    file: ./secrets/db_root_password
+
+volumes:
+  mysql_data:
+  app_storage:
+
+networks:
+  internal:
+    # Subnet tetap: nginx (docker/web/default.conf) hanya mempercayai header X-Forwarded-For dari
+    # Caddy di 172.28.0.10 (compose.tls.yml). Bila bentrok dengan jaringan server, ubah ketiganya.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
