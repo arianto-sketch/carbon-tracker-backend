@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Concerns\AuthorizesProjectEntries;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CarbonEntry\BulkReviewEntriesRequest;
 use App\Http\Requests\CarbonEntry\BulkStoreCarbonEntryRequest;
 use App\Http\Requests\CarbonEntry\StoreCarbonEntryRequest;
 use App\Http\Requests\CarbonEntry\UpdateCarbonEntryRequest;
@@ -180,6 +181,27 @@ class CarbonEntryController extends Controller
         return response()->json([
             'data'    => new CarbonEntryResource($entry->load('approvedBy')),
             'message' => 'Entry berhasil di-approve.',
+        ]);
+    }
+
+    public function bulkReview(BulkReviewEntriesRequest $request, int $projectId): JsonResponse
+    {
+        $project = Project::findOrFail($projectId);
+        $user = $request->user();
+
+        if (! $user->isAdmin() && $project->effectiveRole($user) !== 'owner') {
+            abort(403, 'Hanya owner atau admin yang bisa me-review entry.');
+        }
+
+        $data = $request->validated();
+        $result = $this->service->bulkReview($project, $data['entry_ids'], $data['action'], $user, $data['reason'] ?? null);
+
+        $done = count($result['processed']).' entri '.($data['action'] === 'approve' ? 'disetujui' : 'ditolak');
+        $skipped = count($result['skipped']);
+
+        return response()->json([
+            'data'    => $result,
+            'message' => $skipped ? "{$done}, {$skipped} dilewati." : "{$done}.",
         ]);
     }
 
