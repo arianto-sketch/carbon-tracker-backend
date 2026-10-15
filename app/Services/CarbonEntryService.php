@@ -417,10 +417,16 @@ class CarbonEntryService
                 $skipped[] = ['id' => $id, 'reason' => (string) collect($e->errors())->flatten()->first()];
             } catch (AuthorizationException $e) {
                 $skipped[] = ['id' => $id, 'reason' => $e->getMessage()];
+            } catch (Throwable $e) {
+                // Mis. deadlock/lock wait timeout: entri ini dilewati, sisanya tetap diproses dan entri yang
+                // sudah tersimpan tetap diberitahukan ke pembuatnya
+                report($e);
+                $skipped[] = ['id' => $id, 'reason' => 'Gagal diproses, coba lagi.'];
             }
         }
 
-        $this->notifyCreatorsOfBatch($project, new EloquentCollection($processed), $action, $reviewer, $reason);
+        // Alasan hanya untuk penolakan (approve satuan juga tidak membawa alasan)
+        $this->notifyCreatorsOfBatch($project, new EloquentCollection($processed), $action, $reviewer, $action === 'reject' ? $reason : null);
 
         return ['processed' => array_map(fn (CarbonEntry $e) => $e->id, $processed), 'skipped' => $skipped];
     }
@@ -433,6 +439,7 @@ class CarbonEntryService
                 ? new EntryWorkflowNotification($action === 'approve' ? 'entry_approved' : 'entry_rejected', $own->first(), $reviewer, $reason)
                 : new EntryBatchNotification($action === 'approve' ? 'entries_approved' : 'entries_rejected', $project, $reviewer, $own->count(), $reason);
 
+            // Semua entri dalam grup dibuat user yang sama: entri pertama cukup untuk alamat penerima
             $this->notifyCreator($own->first(), $notification);
         });
     }

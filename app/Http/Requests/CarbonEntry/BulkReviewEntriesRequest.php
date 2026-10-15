@@ -19,7 +19,7 @@ class BulkReviewEntriesRequest extends FormRequest
         return [
             'action'       => ['required', 'in:approve,reject'],
             'entry_ids'    => ['required', 'array', 'min:1', 'max:'.self::MAX_ENTRIES],
-            'entry_ids.*'  => ['integer', 'distinct'],
+            'entry_ids.*'  => ['required', 'integer', 'min:1', 'distinct'],
             // Sama dengan tolak satu entri
             'reason'       => ['required_if:action,reject', 'nullable', 'string', 'max:500'],
         ];

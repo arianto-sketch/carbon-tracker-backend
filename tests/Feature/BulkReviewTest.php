@@ -129,6 +129,50 @@ class BulkReviewTest extends TestCase
         $this->review($this->admin, ['action' => 'approve', 'entry_ids' => [$entry->id]])->assertOk();
     }
 
+    public function test_an_unexpected_failure_on_one_entry_does_not_stop_the_others_or_their_notifications(): void
+    {
+        Notification::fake();
+        $failing = $this->makeEntry($this->project, $this->memberA, 'submitted');
+        $ok = $this->makeEntry($this->project, $this->memberA, 'submitted');
+        // Mis. deadlock/lock wait timeout pada satu baris
+        CarbonEntry::updating(function (CarbonEntry $entry) use ($failing) {
+            if ($entry->id === $failing->id && $entry->status === 'approved') {
+                throw new \RuntimeException('Deadlock found when trying to get lock');
+            }
+        });
+
+        $this->review($this->owner, ['action' => 'approve', 'entry_ids' => [$failing->id, $ok->id]])
+            ->assertOk()
+            ->assertJsonPath('data.processed', [$ok->id])
+            ->assertJsonPath('data.skipped.0.reason', 'Gagal diproses, coba lagi.');
+
+        $this->assertSame('submitted', $failing->fresh()->status);
+        Notification::assertSentToTimes($this->memberA, EntryWorkflowNotification::class, 1);
+    }
+
+    public function test_approval_does_not_carry_a_reason(): void
+    {
+        Notification::fake();
+        $entry = $this->makeEntry($this->project, $this->memberA, 'submitted');
+
+        $this->review($this->owner, ['action' => 'approve', 'entry_ids' => [$entry->id], 'reason' => 'tidak relevan'])->assertOk();
+
+        Notification::assertSentTo($this->memberA, EntryWorkflowNotification::class,
+            fn (EntryWorkflowNotification $n) => $n->toArray($this->memberA)['reason'] === null);
+    }
+
+    public function test_duplicate_ids_and_viewer_owners_are_refused(): void
+    {
+        $entry = $this->makeEntry($this->project, $this->memberB, 'submitted');
+        $this->review($this->owner, ['action' => 'approve', 'entry_ids' => [$entry->id, $entry->id]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('entry_ids.0');
+
+        $viewerOwner = User::factory()->create(['role' => 'viewer']);
+        $this->addMember($this->project, $viewerOwner, 'owner');
+        $this->review($viewerOwner, ['action' => 'approve', 'entry_ids' => [$entry->id]])->assertForbidden();
+    }
+
     public function test_request_is_validated(): void
     {
         $this->review($this->owner, ['action' => 'hapus', 'entry_ids' => []])
