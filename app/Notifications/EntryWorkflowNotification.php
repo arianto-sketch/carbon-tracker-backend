@@ -4,20 +4,13 @@ namespace App\Notifications;
 
 use App\Models\CarbonEntry;
 use App\Models\User;
-use App\Support\Markdown;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
-use Illuminate\Notifications\Notification;
 
 /**
- * Notifikasi alur approval entri: entry_submitted (ke owner project), entry_approved &
- * entry_rejected (ke pembuat entri). Selalu in-app; juga email bila user tidak mematikannya.
+ * Notifikasi satu entri: entry_submitted (ke owner project), entry_approved & entry_rejected
+ * (ke pembuat entri).
  */
-class EntryWorkflowNotification extends Notification implements ShouldQueue
+class EntryWorkflowNotification extends ApprovalNotification
 {
-    use Queueable;
-
     private const MESSAGES = [
         'entry_submitted' => ':actor mengirim entri untuk di-approve di project :project.',
         'entry_approved'  => ':actor menyetujui entri Anda di project :project.',
@@ -30,45 +23,13 @@ class EntryWorkflowNotification extends Notification implements ShouldQueue
         'entry_rejected'  => 'Entri ditolak: :project',
     ];
 
-    /** Email dibatalkan (bukan gagal berulang) bila entri/user sudah dihapus permanen saat worker berjalan */
-    public bool $deleteWhenMissingModels = true;
-
-    /** Percobaan kirim email bila server SMTP sedang gangguan */
-    public int $tries = 3;
-
     public function __construct(
         private string $type,
         private CarbonEntry $entry,
         private User $actor,
         private ?string $reason = null,
     ) {
-        // Dikirim setelah transaksi yang memicunya selesai (tidak terkirim bila transaksi dibatalkan)
-        $this->afterCommit();
-    }
-
-    /** @return array<int, int> detik jeda sebelum percobaan ke-2 dan ke-3 */
-    public function backoff(): array
-    {
-        return [60, 300];
-    }
-
-    public function via(object $notifiable): array
-    {
-        // Email hanya untuk akun aktif yang tidak mematikannya di Profil
-        $wantsEmail = $notifiable instanceof User && $notifiable->is_active && $notifiable->email_notifications;
-
-        return $wantsEmail ? ['database', 'mail'] : ['database'];
-    }
-
-    /**
-     * In-app tetap disimpan saat itu juga (lonceng langsung terisi); email lewat antrean default
-     * supaya request approval tidak menunggu server SMTP.
-     *
-     * @return array<string, string>
-     */
-    public function viaConnections(): array
-    {
-        return ['database' => 'sync'];
+        parent::__construct();
     }
 
     public function toArray(object $notifiable): array
@@ -84,25 +45,24 @@ class EntryWorkflowNotification extends Notification implements ShouldQueue
         ];
     }
 
-    public function toMail(User $notifiable): MailMessage
-    {
-        $mail = (new MailMessage)
-            ->subject(strtr(self::SUBJECTS[$this->type], [':project' => $this->projectName()]))
-            ->greeting('Halo '.Markdown::escape($notifiable->name).',')
-            ->line(Markdown::escape($this->message()));
-
-        if ($this->reason !== null) {
-            $mail->line('Alasan: '.Markdown::escape($this->reason));
-        }
-
-        return $mail
-            ->action('Buka project', rtrim((string) config('app.frontend_url'), '/')."/projects/{$this->entry->project_id}")
-            ->line('Anda menerima email ini karena notifikasi email aktif. Notifikasi email bisa dimatikan di halaman Profil.');
-    }
-
-    private function message(): string
+    protected function message(): string
     {
         return strtr(self::MESSAGES[$this->type], [':actor' => $this->actor->name, ':project' => $this->projectName()]);
+    }
+
+    protected function subject(): string
+    {
+        return strtr(self::SUBJECTS[$this->type], [':project' => $this->projectName()]);
+    }
+
+    protected function projectId(): int
+    {
+        return $this->entry->project_id;
+    }
+
+    protected function reason(): ?string
+    {
+        return $this->reason;
     }
 
     private function projectName(): string

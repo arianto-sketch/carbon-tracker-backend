@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Concerns\AuthorizesProjectEntries;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CarbonEntry\BulkReviewEntriesRequest;
 use App\Http\Requests\CarbonEntry\BulkStoreCarbonEntryRequest;
 use App\Http\Requests\CarbonEntry\StoreCarbonEntryRequest;
 use App\Http\Requests\CarbonEntry\UpdateCarbonEntryRequest;
@@ -183,6 +184,24 @@ class CarbonEntryController extends Controller
         ]);
     }
 
+    public function bulkReview(BulkReviewEntriesRequest $request, int $projectId): JsonResponse
+    {
+        $project = Project::findOrFail($projectId);
+        $user = $request->user();
+        $this->authorizeReviewer($request, $project);
+
+        $data = $request->validated();
+        $result = $this->service->bulkReview($project, $data['entry_ids'], $data['action'], $user, $data['reason'] ?? null);
+
+        $done = count($result['processed']).' entri '.($data['action'] === 'approve' ? 'disetujui' : 'ditolak');
+        $skipped = count($result['skipped']);
+
+        return response()->json([
+            'data'    => $result,
+            'message' => $skipped ? "{$done}, {$skipped} dilewati." : "{$done}.",
+        ]);
+    }
+
     public function reject(Request $request, int $projectId, int $id): JsonResponse
     {
         $project = Project::findOrFail($projectId);
@@ -215,19 +234,25 @@ class CarbonEntryController extends Controller
         ], 201);
     }
 
-    /**
-     * Approve/tolak: owner project atau admin, dan bukan pembuat maupun pengubah terakhir entri (prinsip 4-eyes).
-     */
-    private function authorizeReview(Request $request, Project $project, CarbonEntry $entry): void
+    /** Owner project (bukan viewer global) atau admin: syarat approve/tolak, satuan maupun massal */
+    private function authorizeReviewer(Request $request, Project $project): void
     {
         $user = $request->user();
 
         if (! $user->isAdmin() && $project->effectiveRole($user) !== 'owner') {
             abort(403, 'Hanya owner atau admin yang bisa me-review entry.');
         }
+    }
+
+    /**
+     * Approve/tolak: owner project atau admin, dan bukan pembuat maupun pengubah terakhir entri (prinsip 4-eyes).
+     */
+    private function authorizeReview(Request $request, Project $project, CarbonEntry $entry): void
+    {
+        $this->authorizeReviewer($request, $project);
 
         // Dicek ulang di service pada baris yang dikunci
-        if ($reason = $entry->reviewBlockedReason($user)) {
+        if ($reason = $entry->reviewBlockedReason($request->user())) {
             abort(403, $reason);
         }
     }

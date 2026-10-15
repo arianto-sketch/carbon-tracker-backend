@@ -8,12 +8,16 @@ use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
+use App\Notifications\ApprovalNotification;
+use App\Notifications\EntryBatchNotification;
 use App\Notifications\EntryWorkflowNotification;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
@@ -285,7 +289,7 @@ class CarbonEntryService
         return $entry->fresh();
     }
 
-    public function approve(CarbonEntry $entry, User $approver): CarbonEntry
+    public function approve(CarbonEntry $entry, User $approver, bool $notify = true): CarbonEntry
     {
         $entry = DB::transaction(function () use ($entry, $approver) {
             $entry = $this->lockForChange($entry);
@@ -301,12 +305,14 @@ class CarbonEntryService
             return $entry;
         });
 
-        $this->notifyCreator($entry, new EntryWorkflowNotification('entry_approved', $entry, $approver));
+        if ($notify) {
+            $this->notifyCreator($entry, new EntryWorkflowNotification('entry_approved', $entry, $approver));
+        }
 
         return $entry->fresh(['approvedBy']);
     }
 
-    public function reject(CarbonEntry $entry, User $reviewer, string $reason): CarbonEntry
+    public function reject(CarbonEntry $entry, User $reviewer, string $reason, bool $notify = true): CarbonEntry
     {
         $entry = DB::transaction(function () use ($entry, $reviewer, $reason) {
             $entry = $this->lockForChange($entry);
@@ -323,7 +329,9 @@ class CarbonEntryService
             return $entry;
         });
 
-        $this->notifyCreator($entry, new EntryWorkflowNotification('entry_rejected', $entry, $reviewer, $reason));
+        if ($notify) {
+            $this->notifyCreator($entry, new EntryWorkflowNotification('entry_rejected', $entry, $reviewer, $reason));
+        }
 
         return $entry->fresh(['rejectedBy']);
     }
@@ -356,7 +364,7 @@ class CarbonEntryService
         $this->sendSafely($owners, new EntryWorkflowNotification('entry_submitted', $entry, $submitter));
     }
 
-    private function notifyCreator(CarbonEntry $entry, EntryWorkflowNotification $notification): void
+    private function notifyCreator(CarbonEntry $entry, ApprovalNotification $notification): void
     {
         if ($entry->createdBy) {
             $this->sendSafely([$entry->createdBy], $notification);
@@ -369,13 +377,71 @@ class CarbonEntryService
      * dan gagal memasukkan email ke antrean; gagal kirim email terjadi di worker (dicoba ulang,
      * lalu tercatat di failed_jobs).
      */
-    private function sendSafely(iterable $users, EntryWorkflowNotification $notification): void
+    private function sendSafely(iterable $users, ApprovalNotification $notification): void
     {
         try {
             Notification::send($users, $notification);
         } catch (Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * Approve/tolak banyak entri sekaligus. Aturan tiap entri tetap berlaku (status submitted, prinsip
+     * 4 mata); entri yang tidak memenuhi dilewati beserta alasannya. Notifikasi dikirim sekali per
+     * pembuat: ringkasan bila lebih dari satu entri, notifikasi biasa bila hanya satu.
+     *
+     * @param  array<int, int>  $entryIds
+     * @return array{processed: array<int, int>, skipped: array<int, array{id: int, reason: string}>}
+     */
+    public function bulkReview(Project $project, array $entryIds, string $action, User $reviewer, ?string $reason = null): array
+    {
+        $entries = CarbonEntry::where('project_id', $project->id)->whereIn('id', $entryIds)->get()->keyBy('id');
+        $processed = [];
+        $skipped = [];
+
+        foreach (array_values(array_unique($entryIds)) as $id) {
+            $entry = $entries->get($id);
+
+            if (! $entry) {
+                $skipped[] = ['id' => $id, 'reason' => 'Entri tidak ditemukan di project ini.'];
+
+                continue;
+            }
+
+            try {
+                $processed[] = $action === 'approve'
+                    ? $this->approve($entry, $reviewer, notify: false)
+                    : $this->reject($entry, $reviewer, (string) $reason, notify: false);
+            } catch (ValidationException $e) {
+                $skipped[] = ['id' => $id, 'reason' => (string) collect($e->errors())->flatten()->first()];
+            } catch (AuthorizationException $e) {
+                $skipped[] = ['id' => $id, 'reason' => $e->getMessage()];
+            } catch (Throwable $e) {
+                // Mis. deadlock/lock wait timeout: entri ini dilewati, sisanya tetap diproses dan entri yang
+                // sudah tersimpan tetap diberitahukan ke pembuatnya
+                report($e);
+                $skipped[] = ['id' => $id, 'reason' => 'Gagal diproses, coba lagi.'];
+            }
+        }
+
+        // Alasan hanya untuk penolakan (approve satuan juga tidak membawa alasan)
+        $this->notifyCreatorsOfBatch($project, new EloquentCollection($processed), $action, $reviewer, $action === 'reject' ? $reason : null);
+
+        return ['processed' => array_map(fn (CarbonEntry $e) => $e->id, $processed), 'skipped' => $skipped];
+    }
+
+    /** @param  EloquentCollection<int, CarbonEntry>  $entries */
+    private function notifyCreatorsOfBatch(Project $project, EloquentCollection $entries, string $action, User $reviewer, ?string $reason): void
+    {
+        $entries->load('createdBy')->groupBy('created_by')->each(function (Collection $own) use ($project, $action, $reviewer, $reason) {
+            $notification = $own->count() === 1
+                ? new EntryWorkflowNotification($action === 'approve' ? 'entry_approved' : 'entry_rejected', $own->first(), $reviewer, $reason)
+                : new EntryBatchNotification($action === 'approve' ? 'entries_approved' : 'entries_rejected', $project, $reviewer, $own->count(), $reason);
+
+            // Semua entri dalam grup dibuat user yang sama: entri pertama cukup untuk alamat penerima
+            $this->notifyCreator($own->first(), $notification);
+        });
     }
 
     public function bulkCreate(array $items, Project $project, User $creator): array

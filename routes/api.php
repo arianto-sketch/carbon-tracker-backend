@@ -82,6 +82,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [CarbonEntryController::class, 'index']);
             Route::post('/', [CarbonEntryController::class, 'store']);
             Route::post('/bulk', [CarbonEntryController::class, 'bulk']);
+            Route::post('/bulk-review', [CarbonEntryController::class, 'bulkReview']);
             Route::get('/import/template', [CarbonEntryImportController::class, 'template']);
             Route::post('/import/preview', [CarbonEntryImportController::class, 'preview'])->middleware('throttle:10,1');
             Route::post('/import', [CarbonEntryImportController::class, 'store']);
