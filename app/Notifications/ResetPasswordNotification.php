@@ -19,6 +19,12 @@ class ResetPasswordNotification extends ResetPassword implements ShouldQueue
     /** Email dibatalkan bila user sudah dihapus saat worker berjalan */
     public bool $deleteWhenMissingModels = true;
 
+    /** Email di antrean dibatalkan bila user dinonaktifkan sebelum terkirim */
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        return (bool) ($notifiable->is_active ?? true);
+    }
+
     public function toMail($notifiable): MailMessage
     {
         $minutes = (int) config('auth.passwords.'.config('auth.defaults.passwords').'.expire');
@@ -34,7 +40,9 @@ class ResetPasswordNotification extends ResetPassword implements ShouldQueue
 
     protected function resetUrl($notifiable): string
     {
-        return rtrim((string) config('app.frontend_url'), '/').'/reset-password?'.http_build_query([
+        // Token di fragment (#), bukan query: fragment tidak dikirim browser ke server, jadi token
+        // tidak tercatat di access log nginx maupun header Referer
+        return rtrim((string) config('app.frontend_url'), '/').'/reset-password#'.http_build_query([
             'token' => $this->token,
             'email' => $notifiable->getEmailForPasswordReset(),
         ]);

@@ -17,7 +17,11 @@ class AuthService
     {
         $user = User::where('email', $email)->first();
 
-        if (! $user || ! Hash::check($password, $user->password)) {
+        // Email tidak terdaftar tetap melewati Hash::check (hash tiruan), supaya lama respons sama
+        // dan keberadaan akun tidak bisa ditebak dari waktunya
+        $passwordValid = Hash::check($password, $user->password ?? self::dummyHash());
+
+        if (! $user || ! $passwordValid) {
             throw ValidationException::withMessages([
                 'email' => ['Email atau password salah.'],
             ]);
@@ -88,6 +92,16 @@ class AuthService
         $user->tokens()
             ->when($current instanceof PersonalAccessToken, fn ($q) => $q->whereKeyNot($current->getKey()))
             ->delete();
+        // Link reset yang masih berlaku tidak boleh menimpa password yang baru saja diganti
+        Password::broker()->deleteToken($user);
+    }
+
+    /** Hash bcrypt tiruan (dibuat sekali per proses) untuk menyamakan waktu login email tak terdaftar */
+    private static function dummyHash(): string
+    {
+        static $hash = null;
+
+        return $hash ??= Hash::make(Str::random(32));
     }
 
     /**
@@ -128,6 +142,14 @@ class AuthService
         $status = Password::broker()->reset(
             ['email' => $data['email'], 'token' => $data['token'], 'password' => $data['password']],
             function (User $user, string $password) {
+                // Akun yang dinonaktifkan setelah link dikirim: tolak dengan pesan yang sama (di dalam
+                // timebox broker, jadi waktunya tidak membedakan akun nonaktif)
+                if (! $user->is_active) {
+                    throw ValidationException::withMessages([
+                        'email' => ['Link reset password tidak valid atau sudah kedaluwarsa.'],
+                    ]);
+                }
+
                 $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
                 // Semua sesi lama dicabut: siapa pun yang masih memegang token lama harus login ulang
                 $user->tokens()->delete();

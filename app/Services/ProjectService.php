@@ -111,7 +111,8 @@ class ProjectService
             $member = $this->lockedMember($project, $userId);
             $this->ensureRoleAllowedFor($member->user, $role);
 
-            if ($member->role === 'owner' && $role !== 'owner' && $lockedOwners->count() <= 1) {
+            // Hanya owner yang benar-benar bisa mengelola (bukan viewer) yang dijaga minimal satu
+            if ($lockedOwners->contains('user_id', $userId) && $role !== 'owner' && $lockedOwners->count() <= 1) {
                 throw ValidationException::withMessages([
                     'role' => ['Project harus punya minimal satu owner. Jadikan anggota lain owner terlebih dahulu.'],
                 ]);
@@ -150,7 +151,9 @@ class ProjectService
     {
         Project::whereKey($project->id)->lockForUpdate()->firstOrFail();
 
+        // Owner ber-role global Viewer (data lama) tidak dihitung: ia tidak bisa mengelola project
         return ProjectMember::where('project_id', $project->id)->where('role', 'owner')
+            ->whereHas('user', fn ($q) => $q->where('role', '!=', 'viewer'))
             ->orderBy('id')->lockForUpdate()->get(['id', 'user_id']);
     }
 

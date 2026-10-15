@@ -41,7 +41,8 @@ class PasswordResetTest extends TestCase
         Notification::assertSentTo($this->user, ResetPasswordNotification::class, function (ResetPasswordNotification $n) {
             $mail = $n->toMail($this->user);
 
-            return str_starts_with($mail->actionUrl, 'https://carbon.example.test/reset-password?token=')
+            // Token di fragment (#): tidak terkirim ke server, jadi tidak tercatat di access log nginx
+            return str_starts_with($mail->actionUrl, 'https://carbon.example.test/reset-password#token=')
                 && str_contains($mail->actionUrl, 'email=budi%40example.test')
                 && $mail->subject === 'Reset password Carbon Tracker';
         });
@@ -97,15 +98,70 @@ class PasswordResetTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('password');
     }
 
-    public function test_forgot_password_is_rate_limited(): void
+    public function test_forgot_password_is_rate_limited_per_ip(): void
     {
         Notification::fake();
 
-        foreach (range(1, 5) as $_) {
-            $this->postJson('/api/v1/auth/forgot-password', ['email' => 'x@example.test'])->assertOk();
+        foreach (range(1, 5) as $i) {
+            $this->postJson('/api/v1/auth/forgot-password', ['email' => "x{$i}@example.test"])->assertOk();
         }
 
-        $this->postJson('/api/v1/auth/forgot-password', ['email' => 'x@example.test'])->assertStatus(429);
+        $this->postJson('/api/v1/auth/forgot-password', ['email' => 'x6@example.test'])->assertStatus(429);
+    }
+
+    public function test_one_mailbox_cannot_be_flooded_with_reset_emails(): void
+    {
+        Notification::fake();
+
+        foreach (range(1, 3) as $i) {
+            $this->withServerVariables(['REMOTE_ADDR' => "10.0.0.{$i}"])
+                ->postJson('/api/v1/auth/forgot-password', ['email' => 'budi@example.test'])->assertOk();
+        }
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.9'])
+            ->postJson('/api/v1/auth/forgot-password', ['email' => 'BUDI@example.test'])->assertStatus(429);
+    }
+
+    public function test_reset_links_stop_working_when_the_account_is_deactivated(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $token = Password::createToken($this->user);
+
+        $this->actingAs($admin, 'sanctum')->putJson("/api/v1/users/{$this->user->id}", ['is_active' => false])->assertOk();
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'token' => $token, 'email' => 'budi@example.test', 'password' => 'baru-sekali-123', 'password_confirmation' => 'baru-sekali-123',
+        ])->assertUnprocessable()->assertJsonValidationErrors('email');
+        $this->assertFalse(Hash::check('baru-sekali-123', $this->user->fresh()->password));
+    }
+
+    public function test_inactive_user_cannot_reset_even_with_a_valid_token(): void
+    {
+        $token = Password::createToken($this->user);
+        $this->user->forceFill(['is_active' => false])->save();
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'token' => $token, 'email' => 'budi@example.test', 'password' => 'baru-sekali-123', 'password_confirmation' => 'baru-sekali-123',
+        ])->assertUnprocessable()->assertJsonPath('errors.email.0', 'Link reset password tidak valid atau sudah kedaluwarsa.');
+    }
+
+    public function test_changing_password_invalidates_pending_reset_links(): void
+    {
+        $token = Password::createToken($this->user);
+        $this->user->forceFill(['password' => 'lama-sekali-1'])->save();
+
+        $this->actingAs($this->user, 'sanctum')->putJson('/api/v1/auth/me/password', [
+            'current_password' => 'lama-sekali-1', 'password' => 'baru-sekali-1', 'password_confirmation' => 'baru-sekali-1',
+        ])->assertOk();
+
+        $this->assertFalse(Password::tokenExists($this->user, $token));
+    }
+
+    public function test_queued_reset_email_is_dropped_if_the_user_was_deactivated_meanwhile(): void
+    {
+        $this->user->forceFill(['is_active' => false])->save();
+
+        $this->assertFalse((new ResetPasswordNotification('token'))->shouldSend($this->user, 'mail'));
     }
 
     public function test_admin_can_send_a_reset_link_to_a_user(): void

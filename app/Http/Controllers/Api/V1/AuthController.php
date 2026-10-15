@@ -37,7 +37,10 @@ class AuthController extends Controller
 
     public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
     {
-        $this->authService->requestPasswordReset($request->validated('email'));
+        // Dicari dan dikirim SETELAH respons: waktu respons sama untuk email terdaftar maupun tidak,
+        // jadi keberadaan akun tidak bisa ditebak dari lamanya respons
+        $email = (string) $request->validated('email');
+        dispatch(fn () => app(AuthService::class)->requestPasswordReset($email))->afterResponse();
 
         return response()->json(['message' => 'Jika email terdaftar dan aktif, link reset password sudah dikirim.']);
     }

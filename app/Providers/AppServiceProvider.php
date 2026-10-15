@@ -33,13 +33,24 @@ class AppServiceProvider extends ServiceProvider
                 ], 429, $headers));
         });
 
-        // Lupa/reset password (rute tamu): maks 5 permintaan per menit per IP
-        RateLimiter::for('password-reset', function (Request $request) {
-            return Limit::perMinute(5)
-                ->by('password-reset|'.$request->ip())
-                ->response(fn (Request $request, array $headers) => response()->json([
-                    'message' => 'Terlalu banyak permintaan reset password. Coba lagi nanti.',
-                ], 429, $headers));
+        $tooManyResets = fn (Request $request, array $headers) => response()->json([
+            'message' => 'Terlalu banyak permintaan reset password. Coba lagi nanti.',
+        ], 429, $headers);
+
+        // Lupa password: maks 5/menit per IP, dan maks 3/jam per alamat email agar kotak masuk
+        // seseorang tidak bisa dibanjiri email reset (respons 429 sama untuk email apa pun)
+        RateLimiter::for('forgot-password', function (Request $request) use ($tooManyResets) {
+            $email = $request->input('email');
+
+            return [
+                Limit::perMinute(5)->by('forgot-ip|'.$request->ip())->response($tooManyResets),
+                Limit::perHour(3)->by('forgot-email|'.(is_string($email) ? Str::lower(trim($email)) : ''))->response($tooManyResets),
+            ];
+        });
+
+        // Simpan password baru dari link reset: maks 5/menit per IP
+        RateLimiter::for('password-reset', function (Request $request) use ($tooManyResets) {
+            return Limit::perMinute(5)->by('reset-ip|'.$request->ip())->response($tooManyResets);
         });
 
         // Batas umum endpoint ber-auth, dihitung per user (rute tamu punya limiter sendiri)

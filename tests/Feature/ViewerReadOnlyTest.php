@@ -108,6 +108,17 @@ class ViewerReadOnlyTest extends TestCase
         $this->assertSame('owner', $this->roleOf($this->owner));
     }
 
+    public function test_viewer_owner_does_not_count_toward_the_minimum_of_one_owner(): void
+    {
+        // Data lama: viewer masih owner, tetapi tidak bisa mengelola; owner PM tidak boleh turun
+        $this->addMember($this->project, $this->viewer, 'owner');
+
+        $this->actingAs($this->owner, 'sanctum')
+            ->putJson("/api/v1/projects/{$this->project->id}/members/{$this->owner->id}", ['role' => 'member'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('role');
+    }
+
     public function test_viewer_owners_are_not_asked_to_approve_entries(): void
     {
         $this->addMember($this->project, $this->viewer, 'owner');

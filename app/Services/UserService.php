@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\Project;
 use App\Models\ProjectMember;
 use App\Models\User;
 use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 
 class UserService
@@ -111,11 +113,12 @@ class UserService
 
             $user->update(Arr::only($data, ['name', 'role', 'is_active']));
 
-            // User nonaktif langsung kehilangan semua sesi
+            // User nonaktif langsung kehilangan semua sesi dan link reset password yang masih berlaku
             if ($deactivating) {
                 $user->tokens()->delete();
+                Password::broker()->deleteToken($user);
             }
-        });
+        }, attempts: 3); // diulang bila MySQL membatalkan karena deadlock antar-kunci project/member
 
         return $user->fresh();
     }
@@ -126,20 +129,28 @@ class UserService
      */
     private function demoteMembershipsToViewer(User $user, User $actor): void
     {
+        // Urutan kunci sama dengan ProjectService::lockedOwners (project dulu, lalu baris owner):
+        // dua admin yang bersamaan menjadikan Viewer dua owner terakhir sebuah project diproses
+        // bergiliran, jadi yang kedua melihat owner lain sudah viewer dan ditolak.
+        $ownedProjectIds = ProjectMember::where('user_id', $user->id)->where('role', 'owner')->pluck('project_id');
+        Project::whereKey($ownedProjectIds)->orderBy('id')->lockForUpdate()->get(['id']);
+
         $memberships = ProjectMember::with('project')
             ->where('user_id', $user->id)
             ->whereIn('role', ['owner', 'member'])
             ->lockForUpdate()
             ->get();
 
-        // Owner lain yang dihitung hanya yang bukan viewer global (viewer tidak bisa mengelola project)
+        // Owner lain yang dihitung hanya yang bukan viewer global (viewer tidak bisa mengelola project);
+        // dibaca dengan kunci supaya melihat data terbaru, bukan snapshot transaksi
         $soleOwnerOf = $memberships
             ->filter(fn (ProjectMember $m) => $m->role === 'owner' && $m->project !== null)
             ->reject(fn (ProjectMember $m) => ProjectMember::where('project_id', $m->project_id)
                 ->where('role', 'owner')
                 ->whereKeyNot($m->getKey())
                 ->whereHas('user', fn ($q) => $q->where('role', '!=', 'viewer'))
-                ->exists());
+                ->lockForUpdate()
+                ->count() > 0);
 
         if ($soleOwnerOf->isNotEmpty()) {
             $projects = $soleOwnerOf->map(fn (ProjectMember $m) => $m->project?->name)->implode(', ');
