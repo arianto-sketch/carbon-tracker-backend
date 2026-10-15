@@ -58,7 +58,7 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        $userRole = $project->getUserRole($request->user()->id);
+        $userRole = $project->effectiveRole($request->user());
         if (! $request->user()->isAdmin() && $userRole !== 'owner') {
             return response()->json(['message' => 'Hanya owner atau admin yang bisa mengubah project.'], 403);
         }
@@ -100,7 +100,7 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        $userRole = $project->getUserRole($request->user()->id);
+        $userRole = $project->effectiveRole($request->user());
         if (! $request->user()->isAdmin() && $userRole !== 'owner') {
             return response()->json(['message' => 'Hanya owner atau admin yang bisa menambah member.'], 403);
         }
@@ -124,7 +124,7 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        $userRole = $project->getUserRole($request->user()->id);
+        $userRole = $project->effectiveRole($request->user());
         if (! $request->user()->isAdmin() && $userRole !== 'owner') {
             return response()->json(['message' => 'Hanya owner atau admin yang bisa mengubah role member.'], 403);
         }
@@ -143,7 +143,7 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        $userRole = $project->getUserRole($request->user()->id);
+        $userRole = $project->effectiveRole($request->user());
         if (! $request->user()->isAdmin() && $userRole !== 'owner') {
             return response()->json(['message' => 'Hanya owner atau admin yang bisa menghapus member.'], 403);
         }

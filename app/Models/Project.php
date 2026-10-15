@@ -73,4 +73,19 @@ class Project extends Model
     {
         return $this->projectMembers()->where('user_id', $userId)->value('role');
     }
+
+    /**
+     * Role yang menentukan wewenang user di project: role global Viewer selalu hanya-baca,
+     * walau membership-nya (data lama) masih owner/member. Null = bukan anggota.
+     */
+    public function effectiveRole(User $user): ?string
+    {
+        return self::effectiveRoleOf($user, $this->getUserRole($user->id));
+    }
+
+    /** Sama dengan effectiveRole() untuk role membership yang sudah dimuat (mis. dari subquery) */
+    public static function effectiveRoleOf(User $user, ?string $membershipRole): ?string
+    {
+        return $membershipRole !== null && $user->isViewer() ? 'viewer' : $membershipRole;
+    }
 }

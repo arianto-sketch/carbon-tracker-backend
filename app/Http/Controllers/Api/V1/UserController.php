@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\User\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\AuthService;
 use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,9 +16,29 @@ class UserController extends Controller
 {
     public function __construct(private UserService $service) {}
 
+    /** Admin dan PM (calon owner project) mencari user untuk dijadikan anggota project */
+    public function lookup(Request $request): JsonResponse
+    {
+        if ($request->user()->isViewer()) {
+            return response()->json(['message' => 'Akses ditolak.'], 403);
+        }
+
+        $search = $request->validate(['search' => ['required', 'string', 'min:2', 'max:100']])['search'];
+
+        return response()->json(['data' => $this->service->lookup($search)]);
+    }
+
     public function history(int $id): JsonResponse
     {
         return response()->json(['data' => $this->service->history(User::findOrFail($id))]);
+    }
+
+    public function sendPasswordResetLink(Request $request, AuthService $auth, int $id): JsonResponse
+    {
+        $user = User::findOrFail($id);
+        $auth->sendPasswordResetLink($user, $request->user());
+
+        return response()->json(['message' => "Link reset password dikirim ke {$user->email}."]);
     }
 
     public function index(Request $request): JsonResponse

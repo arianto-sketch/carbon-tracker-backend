@@ -21,6 +21,9 @@ Schedule::call(function () {
 // File lampiran dari entri yang sudah dihapus lebih dari 30 hari
 Schedule::command('entries:purge-deleted-attachments')->daily();
 
+// Token reset password yang sudah kedaluwarsa
+Schedule::command('auth:clear-resets')->daily();
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\Project;
+use App\Models\ProjectMember;
 use App\Models\User;
 use App\Support\Like;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 
 class UserService
@@ -24,6 +27,23 @@ class UserService
             ->when($filters['role'] ?? null, fn ($query, $role) => $query->where('role', $role))
             ->orderBy('name')
             ->paginate($perPage);
+    }
+
+    /**
+     * Pencarian user aktif untuk ditambahkan ke project (owner PM/admin), hanya kolom yang perlu.
+     *
+     * @return array<int, array{id: int, name: string, email: string, role: string}>
+     */
+    public function lookup(string $search, int $limit = 10): array
+    {
+        $query = User::query()->where('is_active', true);
+        Like::anyContains($query, ['name', 'email'], $search);
+
+        return $query->orderBy('name')
+            ->limit($limit)
+            ->get(['id', 'name', 'email', 'role'])
+            ->map(fn (User $user) => $user->only(['id', 'name', 'email', 'role']))
+            ->all();
     }
 
     /**
@@ -72,7 +92,13 @@ class UserService
             ]);
         }
 
-        DB::transaction(function () use ($user, $data, $deactivating, $demoting) {
+        $toViewer = ($data['role'] ?? null) === 'viewer' && ! $user->isViewer();
+
+        DB::transaction(function () use ($user, $data, $actor, $deactivating, $demoting, $toViewer) {
+            if ($toViewer) {
+                $this->demoteMembershipsToViewer($user, $actor);
+            }
+
             if ($deactivating || $demoting) {
                 // Kunci semua admin aktif: dua admin yang saling menurunkan/menonaktifkan secara
                 // bersamaan diproses bergiliran, jadi yang kedua melihat jumlah admin terbaru.
@@ -87,12 +113,57 @@ class UserService
 
             $user->update(Arr::only($data, ['name', 'role', 'is_active']));
 
-            // User nonaktif langsung kehilangan semua sesi
+            // User nonaktif langsung kehilangan semua sesi dan link reset password yang masih berlaku
             if ($deactivating) {
                 $user->tokens()->delete();
+                Password::broker()->deleteToken($user);
             }
-        });
+        }, attempts: 3); // diulang bila MySQL membatalkan karena deadlock antar-kunci project/member
 
         return $user->fresh();
+    }
+
+    /**
+     * Role global Viewer hanya boleh membaca: membership owner/member diturunkan menjadi viewer (tercatat
+     * di audit log). Ditolak bila user satu-satunya owner sebuah project (aturan minimal satu owner).
+     */
+    private function demoteMembershipsToViewer(User $user, User $actor): void
+    {
+        // Urutan kunci sama dengan ProjectService::lockedOwners (project dulu, lalu baris owner):
+        // dua admin yang bersamaan menjadikan Viewer dua owner terakhir sebuah project diproses
+        // bergiliran, jadi yang kedua melihat owner lain sudah viewer dan ditolak.
+        $ownedProjectIds = ProjectMember::where('user_id', $user->id)->where('role', 'owner')->pluck('project_id');
+        Project::whereKey($ownedProjectIds)->orderBy('id')->lockForUpdate()->get(['id']);
+
+        $memberships = ProjectMember::with('project')
+            ->where('user_id', $user->id)
+            ->whereIn('role', ['owner', 'member'])
+            ->lockForUpdate()
+            ->get();
+
+        // Owner lain yang dihitung hanya yang bukan viewer global (viewer tidak bisa mengelola project);
+        // dibaca dengan kunci supaya melihat data terbaru, bukan snapshot transaksi
+        $soleOwnerOf = $memberships
+            ->filter(fn (ProjectMember $m) => $m->role === 'owner' && $m->project !== null)
+            ->reject(fn (ProjectMember $m) => ProjectMember::where('project_id', $m->project_id)
+                ->where('role', 'owner')
+                ->whereKeyNot($m->getKey())
+                ->whereHas('user', fn ($q) => $q->where('role', '!=', 'viewer'))
+                ->lockForUpdate()
+                ->count() > 0);
+
+        if ($soleOwnerOf->isNotEmpty()) {
+            $projects = $soleOwnerOf->map(fn (ProjectMember $m) => $m->project?->name)->implode(', ');
+
+            throw ValidationException::withMessages([
+                'role' => ["Tidak bisa dijadikan Viewer: user ini satu-satunya owner di project {$projects}. Tunjuk owner lain terlebih dahulu."],
+            ]);
+        }
+
+        foreach ($memberships as $membership) {
+            $oldRole = $membership->role;
+            $membership->update(['role' => 'viewer']);
+            AuditLog::record('updated', $membership, ['role' => $oldRole], ['role' => 'viewer'], $actor->id);
+        }
     }
 }

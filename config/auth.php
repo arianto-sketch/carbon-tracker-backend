@@ -114,4 +114,8 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    // Durasi minimum (mikrodetik) proses reset password, di atas waktu bcrypt terlama di server:
+    // token valid/tidak valid dan akun ada/tidak menghasilkan waktu respons yang sama
+    'timebox_duration' => (int) env('AUTH_TIMEBOX_DURATION', 1000000),
+
 ];

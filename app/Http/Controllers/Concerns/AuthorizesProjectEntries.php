@@ -27,9 +27,7 @@ trait AuthorizesProjectEntries
             return;
         }
 
-        $projectRole = $project->getUserRole($user->id);
-
-        if ($user->role === 'viewer' || ! in_array($projectRole, ['owner', 'member'], true)) {
+        if (! in_array($project->effectiveRole($user), ['owner', 'member'], true)) {
             abort(403, 'Akses ditolak. Role Anda hanya bisa melihat entri.');
         }
     }

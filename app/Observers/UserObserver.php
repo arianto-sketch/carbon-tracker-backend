@@ -5,8 +5,6 @@ namespace App\Observers;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Request;
 
 /**
  * Jejak perubahan akun: siapa mengubah nama, role, atau status aktif user, dan kapan.
@@ -35,16 +33,6 @@ class UserObserver
 
     private function log(string $action, User $user, ?array $oldValues, array $newValues): void
     {
-        AuditLog::create([
-            'user_id'    => Auth::id(),
-            'action'     => $action,
-            'model_type' => User::class,
-            'model_id'   => $user->id,
-            'old_values' => $oldValues,
-            'new_values' => $newValues,
-            'ip_address' => Request::ip(),
-            'user_agent' => Request::userAgent(),
-            'created_at' => now(),
-        ]);
+        AuditLog::record($action, $user, $oldValues, $newValues);
     }
 }

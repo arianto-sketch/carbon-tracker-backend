@@ -29,24 +29,25 @@ class ProjectResource extends JsonResource
         ];
     }
 
+    /** Role efektif (viewer global selalu "viewer"), dipakai frontend untuk menampilkan tombol kelola */
     private function currentUserRole(Request $request): ?string
     {
-        $userId = $request->user()?->id;
+        $user = $request->user();
 
-        if (! $userId) {
+        if (! $user) {
             return null;
         }
 
         // List project: role sudah dihitung lewat subquery (ProjectService::list)
         if (array_key_exists('current_user_role', $this->resource->getAttributes())) {
-            return $this->resource->getAttribute('current_user_role');
+            $role = $this->resource->getAttribute('current_user_role');
+        } elseif ($this->relationLoaded('projectMembers')) {
+            // Detail project sudah memuat projectMembers
+            $role = $this->projectMembers->firstWhere('user_id', $user->id)?->role;
+        } else {
+            $role = $this->getUserRole($user->id);
         }
 
-        // Detail project sudah memuat projectMembers
-        if ($this->relationLoaded('projectMembers')) {
-            return $this->projectMembers->firstWhere('user_id', $userId)?->role;
-        }
-
-        return $this->getUserRole($userId);
+        return Project::effectiveRoleOf($user, $role);
     }
 }
