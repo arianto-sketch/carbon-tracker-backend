@@ -65,7 +65,8 @@ class ProjectService
             'code' => strtoupper($data['code']),
             'description' => $data['description'] ?? null,
             'client_name' => $data['client_name'] ?? null,
-            'team_size' => $data['team_size'] ?? null,
+            // Klien lama yang tidak mengirim field ini tidak menghapus nilainya; null eksplisit = dikosongkan
+            'team_size' => array_key_exists('team_size', $data) ? $data['team_size'] : $project->team_size,
             'status' => $data['status'] ?? $project->status,
             'start_date' => $data['start_date'],
             'end_date' => $data['end_date'] ?? null,

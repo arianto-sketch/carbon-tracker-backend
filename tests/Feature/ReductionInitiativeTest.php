@@ -145,6 +145,9 @@ class ReductionInitiativeTest extends TestCase
             ->json('data.id');
 
         $this->actingAs($this->member, 'sanctum')->putJson($this->url("/{$id}"), $this->payload())->assertNotFound();
+        // 404 lebih dulu dari validasi
+        $this->actingAs($this->member, 'sanctum')->putJson($this->url("/{$id}"), $this->payload(['title' => '']))->assertNotFound();
+        $this->actingAs($this->member, 'sanctum')->putJson($this->url('/999999'), [])->assertNotFound();
     }
 
     public function test_only_owners_or_admins_delete_initiatives(): void

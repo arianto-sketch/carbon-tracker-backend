@@ -63,7 +63,7 @@ class Project extends Model
     /** Emisi per anggota tim (kg CO2e/orang); null bila jumlah anggota tim belum diisi */
     public function intensityFor(float $totalCo2eKg): ?float
     {
-        return $this->team_size ? round($totalCo2eKg / $this->team_size, 4) : null;
+        return $this->team_size > 0 ? round($totalCo2eKg / $this->team_size, 4) : null;
     }
 
     /** @return HasMany<CarbonTarget, $this> */

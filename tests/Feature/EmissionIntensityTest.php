@@ -60,6 +60,17 @@ class EmissionIntensityTest extends TestCase
             ->assertJsonPath('data.0.intensity_kg_per_person', null);
     }
 
+    public function test_update_without_team_size_keeps_it_and_null_clears_it(): void
+    {
+        $this->updateProject(['team_size' => 4])->assertOk();
+
+        $this->actingAs($this->owner, 'sanctum')->putJson("/api/v1/projects/{$this->project->id}", [
+            'name' => 'Nama baru', 'code' => $this->project->code, 'start_date' => '2026-01-01',
+        ])->assertOk()->assertJsonPath('data.team_size', 4);
+
+        $this->updateProject(['team_size' => null])->assertOk()->assertJsonPath('data.team_size', null);
+    }
+
     public function test_team_size_is_validated(): void
     {
         $this->updateProject(['team_size' => 0])->assertUnprocessable()->assertJsonValidationErrors('team_size');
