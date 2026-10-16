@@ -17,6 +17,7 @@ class Project extends Model
         'code',
         'description',
         'client_name',
+        'team_size',
         'status',
         'start_date',
         'end_date',
@@ -29,6 +30,7 @@ class Project extends Model
         return [
             'start_date' => 'date',
             'end_date' => 'date',
+            'team_size' => 'integer',
         ];
     }
 
@@ -50,6 +52,18 @@ class Project extends Model
     public function carbonEntries(): HasMany
     {
         return $this->hasMany(CarbonEntry::class);
+    }
+
+    /** @return HasMany<ReductionInitiative, $this> */
+    public function reductionInitiatives(): HasMany
+    {
+        return $this->hasMany(ReductionInitiative::class);
+    }
+
+    /** Emisi per anggota tim (kg CO2e/orang); null bila jumlah anggota tim belum diisi */
+    public function intensityFor(float $totalCo2eKg): ?float
+    {
+        return $this->team_size > 0 ? round($totalCo2eKg / $this->team_size, 4) : null;
     }
 
     /** @return HasMany<CarbonTarget, $this> */

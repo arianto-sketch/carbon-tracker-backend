@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\EmissionFactorController;
 use App\Http\Controllers\Api\V1\EmissionFactorValueController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Controllers\Api\V1\ReductionInitiativeController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Support\Facades\Route;
@@ -108,6 +109,14 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [CarbonTargetController::class, 'destroy']);
         });
 
+        // Rencana aksi reduksi
+        Route::prefix('projects/{projectId}/initiatives')->group(function () {
+            Route::get('/', [ReductionInitiativeController::class, 'index']);
+            Route::post('/', [ReductionInitiativeController::class, 'store']);
+            Route::put('/{id}', [ReductionInitiativeController::class, 'update']);
+            Route::delete('/{id}', [ReductionInitiativeController::class, 'destroy']);
+        });
+
         // Dashboard
         Route::prefix('dashboard')->group(function () {
             Route::get('/summary', [DashboardController::class, 'summary']);
@@ -118,6 +127,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/outlook', [DashboardController::class, 'outlook']);
             Route::get('/top-entries', [DashboardController::class, 'topEntries']);
             Route::get('/target-alerts', [DashboardController::class, 'targetAlerts']);
+            Route::get('/initiatives', [DashboardController::class, 'initiatives']);
         });
 
         // Reports

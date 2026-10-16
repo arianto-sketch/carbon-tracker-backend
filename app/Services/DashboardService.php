@@ -6,6 +6,7 @@ use App\Models\CarbonEntry;
 use App\Models\EmissionCategory;
 use App\Models\EmissionFactor;
 use App\Models\Project;
+use App\Models\ReductionInitiative;
 use App\Models\User;
 use Illuminate\Support\Arr;
 
@@ -55,6 +56,8 @@ class DashboardService
             // Atribut hasil withSum/withCount (alias), bukan kolom tabel projects
             'total_co2e_kg' => (float) $project->getAttribute('total_co2e_kg'),
             'entry_count'   => (int) $project->getAttribute('entry_count'),
+            'team_size'     => $project->team_size,
+            'intensity_kg_per_person' => $project->intensityFor((float) $project->getAttribute('total_co2e_kg')),
         ])->sortByDesc('total_co2e_kg')->values()->toArray();
     }
 
@@ -210,6 +213,30 @@ class DashboardService
             'co2e_kg'       => (float) $entry->co2e_kg,
             'entry_date'    => $entry->entry_date->toDateString(),
         ])->toArray();
+    }
+
+    /** Estimasi reduksi per tahun dari rencana aksi di project yang bisa diakses user */
+    public function getInitiativeSummary(User $user, array $filters = []): array
+    {
+        $query = ReductionInitiative::query()
+            ->selectRaw('status, COUNT(id) as initiative_count, SUM(estimated_reduction_kg) as total_kg')
+            ->groupBy('status');
+
+        $this->applyUserScope($query, $user);
+        $this->applyFilters($query, Arr::only($filters, ['project_id']));
+
+        // Baris agregat (bukan model) per status
+        $rows = $query->toBase()->get()->keyBy('status');
+        $total = fn (array $statuses) => round((float) $rows->only($statuses)->sum('total_kg'), 4);
+
+        return [
+            'planned_kg' => $total(ReductionInitiative::OPEN_STATUSES),
+            'done_kg'    => $total(['done']),
+            // Semua status selalu ada (nol bila kosong)
+            'counts'     => collect(ReductionInitiative::STATUSES)
+                ->mapWithKeys(fn (string $status) => [$status => (int) ($rows[$status]->initiative_count ?? 0)])
+                ->all(),
+        ];
     }
 
     private function applyUserScope($query, User $user): void
