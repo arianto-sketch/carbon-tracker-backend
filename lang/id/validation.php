@@ -113,6 +113,7 @@ return [
         'description'        => 'keterangan',
         'email'              => 'email',
         'email_notifications' => 'notifikasi email',
+        'monthly_summary_email' => 'email ringkasan bulanan',
         'estimated_reduction_kg' => 'estimasi reduksi',
         'emission_factor_id' => 'faktor emisi',
         'end_date'           => 'tanggal selesai',

@@ -17,6 +17,7 @@ class User extends Authenticatable
     /** Sama dengan default kolom, supaya model yang baru dibuat (belum dimuat ulang) sudah benar */
     protected $attributes = [
         'email_notifications' => true,
+        'monthly_summary_email' => true,
     ];
 
     protected $fillable = [
@@ -27,6 +28,7 @@ class User extends Authenticatable
         'avatar',
         'is_active',
         'email_notifications',
+        'monthly_summary_email',
     ];
 
     protected $hidden = [
@@ -41,6 +43,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'email_notifications' => 'boolean',
+            'monthly_summary_email' => 'boolean',
         ];
     }
 

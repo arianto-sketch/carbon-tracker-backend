@@ -27,6 +27,12 @@ Schedule::command('auth:clear-resets')->daily();
 // Nilai faktor "saat ini" mengikuti periode yang mulai berlaku hari ini (tengah malam WIB)
 Schedule::command('factors:sync-current-values')->dailyAt('00:05')->timezone(config('app.business_timezone'));
 
+// Email ringkasan emisi bulan lalu untuk owner project & admin (tanggal 1, pagi WIB)
+Schedule::command('reports:send-monthly-summaries')
+    ->monthlyOn(1, '07:00')
+    ->timezone(config('app.business_timezone'))
+    ->withoutOverlapping();
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
