@@ -12,7 +12,10 @@ use Throwable;
 
 /**
  * Email ringkasan emisi bulan lalu ke owner project dan admin (dijalankan tanggal 1 lewat scheduler).
- * Periode yang sudah terkirim dicatat per user, jadi run ulang di bulan yang sama tidak mengirim dobel.
+ *
+ * Periode terakhir yang terkirim dicatat per user, jadi run ulang tidak mengirim dobel. Periode yang
+ * lebih lama (susulan lewat --month) hanya dikirim dengan --force, dan tidak memundurkan catatan itu.
+ * Catatan ditulis saat email masuk antrean: bila job gagal di semua percobaan, kirim ulang dengan --force.
  */
 class SendMonthlySummaries extends Command
 {
@@ -38,9 +41,10 @@ class SendMonthlySummaries extends Command
         $failed = 0;
 
         $service->recipients()
+            // YYYY-MM bisa dibandingkan sebagai string
             ->when(! $this->option('force'), fn ($q) => $q->where(fn ($w) => $w
                 ->whereNull('last_monthly_summary_period')
-                ->orWhere('last_monthly_summary_period', '!=', $period)))
+                ->orWhere('last_monthly_summary_period', '<', $period)))
             ->chunkById(100, function ($users) use ($service, $month, $period, $dryRun, &$sent, &$failed) {
                 /** @var User $user */
                 foreach ($users as $user) {
@@ -55,7 +59,9 @@ class SendMonthlySummaries extends Command
                             $this->line("{$user->email}: {$summary['project_count']} project, ".Format::co2($summary['total_co2e_kg']));
                         } else {
                             $user->notify(new MonthlySummaryNotification($summary));
-                            $user->forceFill(['last_monthly_summary_period' => $period])->save();
+                            if ($user->last_monthly_summary_period === null || $user->last_monthly_summary_period < $period) {
+                                $user->forceFill(['last_monthly_summary_period' => $period])->save();
+                            }
                         }
                         $sent++;
                     } catch (Throwable $e) {

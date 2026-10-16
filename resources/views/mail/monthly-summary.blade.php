@@ -1,12 +1,16 @@
 @php
     use App\Support\Format;
     use App\Support\Markdown;
+    use Illuminate\Support\Str;
+
+    // Teks bebas (nama user/project/kategori): spasi & baris baru dirapatkan (tidak memecah baris tabel/daftar),
+    // lalu di-escape markdown dan dicetak apa adanya. "<" dan ">" ikut di-escape, jadi tidak bisa membentuk tag HTML.
+    $text = fn (string $value): string => Markdown::escape(Str::squish($value));
 @endphp
-{{-- Teks bebas (nama user/project/kategori) di-escape markdown lalu dicetak apa adanya: "<" dan ">" ikut di-escape, jadi tidak bisa membentuk tag HTML --}}
 <x-mail::message>
 # Ringkasan emisi {{ $summary['period_label'] }}
 
-Halo {!! Markdown::escape($name) !!},
+Halo {!! $text($name) !!},
 
 Total emisi yang disetujui pada {{ $summary['period_label'] }}: **{{ Format::co2($summary['total_co2e_kg']) }}**
 @if ($summary['change_pct'] !== null)
@@ -19,7 +23,7 @@ Total emisi yang disetujui pada {{ $summary['period_label'] }}: **{{ Format::co2
 | Project | {{ $summary['period_label'] }} | Perubahan |
 | :------ | ------: | ------: |
 @foreach ($summary['projects'] as $project)
-| {!! Markdown::escape($project['name']) !!} | {{ Format::co2($project['total_co2e_kg']) }} | {{ $project['change_pct'] === null ? '-' : Format::change($project['change_pct']) }} |
+| {!! $text($project['name']) !!} | {{ Format::co2($project['total_co2e_kg']) }} | {{ $project['change_pct'] === null ? '-' : Format::change($project['change_pct']) }} |
 @endforeach
 </x-mail::table>
 @if ($summary['project_count'] > count($summary['projects']))
@@ -35,8 +39,11 @@ Dan {{ $summary['project_count'] - count($summary['projects']) }} project lainny
 **Target {{ $summary['year'] }} yang perlu diperhatikan:**
 
 @foreach ($summary['target_alerts'] as $alert)
-- {!! Markdown::escape($alert['project_name']) !!} · {!! Markdown::escape($alert['category']) !!}: {{ number_format($alert['percentage_used'], 1, ',', '.') }}% dari target{{ $alert['level'] === 'exceeded' ? ' (melebihi target)' : '' }}
+- {!! $text($alert['project_name']) !!} · {!! $text($alert['category']) !!}: {{ number_format($alert['percentage_used'], 1, ',', '.') }}% dari target{{ $alert['level'] === 'exceeded' ? ' (melebihi target)' : '' }}
 @endforeach
+@if ($summary['alert_count'] > count($summary['target_alerts']))
+- Dan {{ $summary['alert_count'] - count($summary['target_alerts']) }} target lainnya (lihat dashboard).
+@endif
 
 @endif
 <x-mail::button :url="$dashboardUrl">

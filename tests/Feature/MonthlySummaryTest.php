@@ -6,6 +6,7 @@ use App\Models\CarbonTarget;
 use App\Models\Project;
 use App\Models\User;
 use App\Notifications\MonthlySummaryNotification;
+use App\Services\MonthlySummaryService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -135,6 +136,40 @@ class MonthlySummaryTest extends TestCase
         Notification::assertSentTo($this->owner, MonthlySummaryNotification::class, fn (MonthlySummaryNotification $n) => $n->summary['period'] === '2026-09'
             && $n->summary['total_co2e_kg'] == 231
             && $n->summary['change_pct'] === null);
+    }
+
+    public function test_backfilling_an_older_month_needs_force_and_keeps_the_latest_marker(): void
+    {
+        Notification::fake();
+        $this->artisan('reports:send-monthly-summaries')->assertSuccessful();
+
+        $this->artisan('reports:send-monthly-summaries --month=2026-09')->assertSuccessful();
+        Notification::assertSentToTimes($this->owner, MonthlySummaryNotification::class, 1);
+
+        $this->artisan('reports:send-monthly-summaries --month=2026-09 --force')->assertSuccessful();
+        Notification::assertSentToTimes($this->owner, MonthlySummaryNotification::class, 2);
+        // Run terjadwal berikutnya untuk Oktober tetap dianggap sudah terkirim
+        $this->assertSame('2026-10', $this->owner->fresh()->last_monthly_summary_period);
+    }
+
+    public function test_target_alerts_are_capped_with_a_count_of_the_rest(): void
+    {
+        foreach (range(1, MonthlySummaryService::MAX_ALERTS + 1) as $i) {
+            $project = $this->makeProject($this->owner, "ALR-{$i}");
+            $this->makeApprovedEntry($project, $this->owner, 100, '2026-10-10');
+            CarbonTarget::create([
+                'project_id' => $project->id, 'period_type' => 'yearly', 'period_year' => 2026,
+                'target_co2e_kg' => 100, 'created_by' => $this->owner->id,
+            ]);
+        }
+        Notification::fake();
+
+        $this->artisan('reports:send-monthly-summaries')->assertSuccessful();
+
+        $notification = Notification::sent($this->owner, MonthlySummaryNotification::class)->first();
+        $this->assertCount(MonthlySummaryService::MAX_ALERTS, $notification->summary['target_alerts']);
+        $this->assertSame(MonthlySummaryService::MAX_ALERTS + 1, $notification->summary['alert_count']);
+        $this->assertStringContainsString('Dan 1 target lainnya', (string) $notification->toMail($this->owner)->render());
     }
 
     public function test_invalid_month_is_rejected(): void

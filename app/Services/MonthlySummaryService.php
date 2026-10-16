@@ -16,6 +16,9 @@ class MonthlySummaryService
     /** Project yang dirinci di email, diurutkan dari emisi terbesar */
     public const MAX_PROJECTS = 10;
 
+    /** Target hampir/sudah terlampaui yang dirinci di email, dari pemakaian tertinggi */
+    public const MAX_ALERTS = 10;
+
     private const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
     public function __construct(private CarbonTargetService $targets) {}
@@ -82,6 +85,8 @@ class MonthlySummaryService
 
         $total = $sum($month);
         $previousTotal = $sum($previous);
+        // Target tahun yang diringkas dengan pemakaian >= 80% (sudah urut tertinggi), hanya di project yang dikelola
+        $alerts = collect($this->targets->getAlerts($user, $month->year))->whereIn('project_id', $ids)->values();
 
         return [
             'period'                 => $month->format('Y-m'),
@@ -98,11 +103,8 @@ class MonthlySummaryService
                 ->where('status', 'submitted')
                 ->where('created_by', '!=', $user->id)
                 ->count(),
-            // Target tahun yang diringkas dengan pemakaian >= 80%, hanya di project yang dikelola
-            'target_alerts'          => collect($this->targets->getAlerts($user, $month->year))
-                ->whereIn('project_id', $ids)
-                ->values()
-                ->all(),
+            'alert_count'            => $alerts->count(),
+            'target_alerts'          => $alerts->take(self::MAX_ALERTS)->all(),
         ];
     }
 

@@ -31,7 +31,8 @@ Schedule::command('factors:sync-current-values')->dailyAt('00:05')->timezone(con
 Schedule::command('reports:send-monthly-summaries')
     ->monthlyOn(1, '07:00')
     ->timezone(config('app.business_timezone'))
-    ->withoutOverlapping();
+    ->withoutOverlapping()
+    ->onOneServer();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
