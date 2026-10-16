@@ -10,6 +10,6 @@ class Markdown
      */
     public static function escape(string $text): string
     {
-        return preg_replace('/([\\\\`*_\[\]()#<>])/', '\\\\$1', $text);
+        return preg_replace('/([\\\\`*_\[\]()#<>|])/', '\\\\$1', $text);
     }
 }

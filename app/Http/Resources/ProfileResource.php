@@ -15,6 +15,7 @@ class ProfileResource extends UserResource
         return [
             ...parent::toArray($request),
             'email_notifications' => $this->email_notifications,
+            'monthly_summary_email' => $this->monthly_summary_email,
         ];
     }
 }

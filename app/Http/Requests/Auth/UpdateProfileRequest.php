@@ -17,6 +17,7 @@ class UpdateProfileRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'avatar' => ['nullable', 'string', 'max:500'],
             'email_notifications' => ['sometimes', 'boolean'],
+            'monthly_summary_email' => ['sometimes', 'boolean'],
         ];
     }
 }

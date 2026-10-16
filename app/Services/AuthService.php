@@ -65,8 +65,10 @@ class AuthService
         ]);
 
         // Di luar array_filter: nilai false (mematikan email) harus tetap tersimpan
-        if (array_key_exists('email_notifications', $data)) {
-            $attributes['email_notifications'] = (bool) $data['email_notifications'];
+        foreach (['email_notifications', 'monthly_summary_email'] as $preference) {
+            if (array_key_exists($preference, $data)) {
+                $attributes[$preference] = (bool) $data[$preference];
+            }
         }
 
         $user->update($attributes);
