@@ -18,6 +18,8 @@ class StoreProjectRequest extends FormRequest
             'code' => ['required', 'string', 'max:50', 'unique:projects,code'],
             'description' => ['nullable', 'string'],
             'client_name' => ['nullable', 'string', 'max:255'],
+            // Pembagi intensitas emisi (kg CO2e per orang)
+            'team_size' => ['nullable', 'integer', 'min:1', 'max:100000'],
             'status' => ['nullable', 'in:active,completed,archived'],
             'start_date' => ['required', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],

@@ -93,6 +93,16 @@ class DashboardController extends Controller
         return response()->json(['data' => $targets->getAlerts($request->user(), $year)]);
     }
 
+    public function initiatives(Request $request): JsonResponse
+    {
+        $data = $this->service->getInitiativeSummary(
+            $request->user(),
+            $this->filters($request, ['project_id'])
+        );
+
+        return response()->json(['data' => $data]);
+    }
+
     private function filters(Request $request, array $keys): array
     {
         $rules = [

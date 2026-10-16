@@ -95,10 +95,56 @@ class ReductionInitiativeTest extends TestCase
     public function test_pic_must_be_an_active_project_member(): void
     {
         $outsider = User::factory()->create();
+        $inactive = User::factory()->create(['is_active' => false]);
+        $this->addMember($this->project, $inactive);
 
-        $this->actingAs($this->member, 'sanctum')->postJson($this->url(), $this->payload(['pic_user_id' => $outsider->id]))
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('pic_user_id');
+        foreach ([$outsider, $inactive] as $pic) {
+            $this->actingAs($this->member, 'sanctum')->postJson($this->url(), $this->payload(['pic_user_id' => $pic->id]))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('pic_user_id');
+        }
+    }
+
+    public function test_outsiders_are_rejected_before_validation(): void
+    {
+        // 403, bukan 422: pesan validasi PIC tidak boleh membocorkan siapa anggota project
+        $this->actingAs(User::factory()->create(), 'sanctum')
+            ->postJson($this->url(), $this->payload(['title' => '', 'pic_user_id' => $this->member->id]))
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Hanya owner atau member project yang bisa mengelola rencana aksi.');
+    }
+
+    public function test_editing_keeps_a_pic_who_has_left_the_project(): void
+    {
+        $id = $this->actingAs($this->member, 'sanctum')->postJson($this->url(), $this->payload())->json('data.id');
+        $this->project->projectMembers()->where('user_id', $this->member->id)->delete();
+
+        $this->actingAs($this->owner, 'sanctum')->putJson($this->url("/{$id}"), $this->payload(['status' => 'in_progress']))
+            ->assertOk()
+            ->assertJsonPath('data.pic.name', 'Rina');
+    }
+
+    public function test_completion_date_is_kept_on_resave_and_cleared_when_reopened(): void
+    {
+        $id = $this->actingAs($this->member, 'sanctum')->postJson($this->url(), $this->payload(['status' => 'done']))->json('data.id');
+        $completedAt = ReductionInitiative::findOrFail($id)->completed_at;
+
+        $this->travel(2)->days();
+        $this->actingAs($this->member, 'sanctum')->putJson($this->url("/{$id}"), $this->payload(['status' => 'done', 'title' => 'LED lantai 2']))->assertOk();
+        $this->assertEquals($completedAt, ReductionInitiative::findOrFail($id)->completed_at);
+
+        $this->actingAs($this->member, 'sanctum')->putJson($this->url("/{$id}"), $this->payload(['status' => 'in_progress']))->assertOk();
+        $this->assertNull(ReductionInitiative::findOrFail($id)->completed_at);
+    }
+
+    public function test_initiatives_of_another_project_are_not_reachable(): void
+    {
+        $other = $this->makeProject($this->owner, 'PRJ-2');
+        $id = $this->actingAs($this->owner, 'sanctum')
+            ->postJson("/api/v1/projects/{$other->id}/initiatives", $this->payload(['pic_user_id' => null]))
+            ->json('data.id');
+
+        $this->actingAs($this->member, 'sanctum')->putJson($this->url("/{$id}"), $this->payload())->assertNotFound();
     }
 
     public function test_only_owners_or_admins_delete_initiatives(): void
@@ -134,5 +180,10 @@ class ReductionInitiativeTest extends TestCase
 
         $this->actingAs(User::factory()->create(), 'sanctum')->getJson('/api/v1/dashboard/initiatives')
             ->assertJsonPath('data.planned_kg', 0);
+
+        $other = $this->makeProject($this->owner, 'PRJ-2');
+        $this->actingAs($this->owner, 'sanctum')->getJson("/api/v1/dashboard/initiatives?project_id={$other->id}")
+            ->assertJsonPath('data.planned_kg', 0)
+            ->assertJsonPath('data.counts.done', 0);
     }
 }

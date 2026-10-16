@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Tests\Concerns\BuildsCarbonData;
 use Tests\TestCase;
 
@@ -28,7 +29,7 @@ class EmissionIntensityTest extends TestCase
         $this->project = $this->makeProject($this->owner);
     }
 
-    private function updateProject(array $overrides): \Illuminate\Testing\TestResponse
+    private function updateProject(array $overrides): TestResponse
     {
         return $this->actingAs($this->owner, 'sanctum')->putJson("/api/v1/projects/{$this->project->id}", array_merge([
             'name' => $this->project->name, 'code' => $this->project->code, 'start_date' => '2026-01-01',

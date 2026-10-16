@@ -39,6 +39,7 @@ class ProjectService
             'code' => strtoupper($data['code']),
             'description' => $data['description'] ?? null,
             'client_name' => $data['client_name'] ?? null,
+            'team_size' => $data['team_size'] ?? null,
             'status' => $data['status'] ?? 'active',
             'start_date' => $data['start_date'],
             'end_date' => $data['end_date'] ?? null,
@@ -64,6 +65,7 @@ class ProjectService
             'code' => strtoupper($data['code']),
             'description' => $data['description'] ?? null,
             'client_name' => $data['client_name'] ?? null,
+            'team_size' => $data['team_size'] ?? null,
             'status' => $data['status'] ?? $project->status,
             'start_date' => $data['start_date'],
             'end_date' => $data['end_date'] ?? null,
@@ -201,9 +203,13 @@ class ProjectService
             ->get();
         $categories = EmissionCategory::whereIn('id', $byCategory->pluck('category_id'))->get()->keyBy('id');
 
+        $total = (float) $entries->sum('co2e_kg');
+
         return [
-            'total_co2e_kg' => (float) $entries->sum('co2e_kg'),
+            'total_co2e_kg' => $total,
             'entry_count' => $entries->count(),
+            'team_size' => $project->team_size,
+            'intensity_kg_per_person' => $project->intensityFor($total),
             'by_category' => $byCategory->map(fn ($row) => [
                 'category_id' => $row->category_id,
                 'category_name' => $categories[$row->category_id]->name ?? null,
