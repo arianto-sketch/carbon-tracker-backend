@@ -73,6 +73,7 @@ class DataCompletenessService
         $ids = $projects->pluck('id')->all();
         $records = $this->records($ids, $month->subMonthsNoOverflow(self::HISTORY_MONTHS), $month);
         $dismissed = $this->dismissals($ids, $month, $month);
+        $factors = $this->factorInfo(array_merge([], ...array_map('array_keys', array_values($records))));
         $ym = $this->ym($month);
 
         $gaps = [];
@@ -83,33 +84,30 @@ class DataCompletenessService
                 continue;
             }
 
-            $factors = $records[$project->id] ?? [];
-            $empty = collect($factors)->every(fn (array $months) => ! isset($months[$ym]));
-            $missing = collect($factors)
-                ->filter(fn (array $months, int $factorId) => ! isset($months[$ym])
-                    && ! isset($dismissedHere[$factorId][$ym])
-                    && $this->isRecurring($months, $month))
+            $recorded = $records[$project->id] ?? [];
+            $missing = collect($recorded)
+                ->filter(fn (array $months, int $factorId) => $this->isMissing($months, $factorId, $month, $dismissedHere, $factors))
                 ->keys()
                 ->all();
+            $empty = $this->isEmpty($recorded, $dismissedHere, $ym);
 
             if ($empty || $missing !== []) {
-                $gaps[] = ['id' => $project->id, 'name' => $project->name, 'empty' => $empty, 'missing_factor_ids' => $missing];
+                $gaps[] = [
+                    'id' => $project->id,
+                    'name' => $project->name,
+                    'empty' => $empty,
+                    'missing_factors' => collect($missing)->map(fn (int $id) => $factors[$id]['name'] ?? "#{$id}")->sort()->values()->all(),
+                ];
             }
         }
 
-        $names = $this->factorNames(array_merge([], ...array_column($gaps, 'missing_factor_ids')));
-
-        return array_map(fn (array $gap) => [
-            'id' => $gap['id'],
-            'name' => $gap['name'],
-            'empty' => $gap['empty'],
-            'missing_factors' => collect($gap['missing_factor_ids'])->map(fn (int $id) => $names[$id] ?? "#{$id}")->sort()->values()->all(),
-        ], $gaps);
+        return $gaps;
     }
 
     /**
      * Panel kelengkapan: GRID_MONTHS bulan terakhir yang sudah lewat x faktor yang tercatat atau rutin.
      * Status sel: recorded (diajukan/disetujui), draft (hanya draft/ditolak), dismissed, missing, none.
+     * Ditampilkan apa pun status project (informasi); pengingat dan dashboard hanya untuk project aktif.
      */
     public function grid(Project $project): array
     {
@@ -119,23 +117,23 @@ class DataCompletenessService
 
         $records = $this->records([$project->id], $first->subMonthsNoOverflow(self::HISTORY_MONTHS), $last)[$project->id] ?? [];
         $dismissed = $this->dismissals([$project->id], $first, $last)[$project->id] ?? [];
+        $factors = $this->factorInfo(array_keys($records));
 
-        $status = function (int $factorId, CarbonImmutable $month) use ($records, $dismissed): string {
+        $status = function (int $factorId, CarbonImmutable $month) use ($records, $dismissed, $factors): string {
             $ym = $this->ym($month);
 
             return match (true) {
                 isset($records[$factorId][$ym]) => $records[$factorId][$ym],
                 isset($dismissed[$factorId][$ym]), isset($dismissed[0][$ym]) => 'dismissed',
-                $this->isRecurring($records[$factorId] ?? [], $month) => 'missing',
+                $this->isMissing($records[$factorId] ?? [], $factorId, $month, $dismissed, $factors) => 'missing',
                 default => 'none',
             };
         };
 
-        $names = $this->factorNames(array_keys($records));
         $rows = collect(array_keys($records))
             ->map(fn (int $factorId) => [
                 'id' => $factorId,
-                'name' => $names[$factorId] ?? "#{$factorId}",
+                'name' => $factors[$factorId]['name'] ?? "#{$factorId}",
                 'statuses' => $months->map(fn (CarbonImmutable $m) => $status($factorId, $m))->all(),
             ])
             // Faktor yang tidak relevan di bulan-bulan yang ditampilkan (hanya tercatat sebelumnya) disembunyikan
@@ -146,14 +144,13 @@ class DataCompletenessService
         return [
             'months' => $months->values()->map(function (CarbonImmutable $month, int $i) use ($project, $records, $dismissed, $rows) {
                 $ym = $this->ym($month);
-                $hasEntries = collect($records)->contains(fn (array $byMonth) => isset($byMonth[$ym]));
                 $projectDismissed = isset($dismissed[0][$ym]);
 
                 return [
                     'year' => $month->year,
                     'month' => $month->month,
                     'label' => $this->label($month),
-                    'empty' => ! $hasEntries && ! $projectDismissed && $this->coversMonth($project, $month),
+                    'empty' => ! $projectDismissed && $this->isEmpty($records, $dismissed, $ym) && $this->coversMonth($project, $month),
                     'dismissed' => $projectDismissed,
                     'missing_count' => $rows->filter(fn (array $row) => $row['statuses'][$i] === 'missing')->count(),
                 ];
@@ -259,26 +256,58 @@ class DataCompletenessService
         return $recorded >= self::MIN_RECORDED_MONTHS;
     }
 
+    /**
+     * Faktor rutin yang belum dicatat dan belum ditandai. Faktor yang sudah dinonaktifkan admin tidak
+     * pernah dianggap belum diisi: user tidak bisa lagi memilihnya di form entri.
+     *
+     * @param  array<int, string>  $months  tercatat per Ym untuk faktor ini
+     * @param  array<int, array<int, true>>  $dismissed  [faktor][Ym] untuk project ini
+     * @param  array<int, array{name: string, active: bool}>  $factors
+     */
+    private function isMissing(array $months, int $factorId, CarbonImmutable $month, array $dismissed, array $factors): bool
+    {
+        $ym = $this->ym($month);
+
+        return ! isset($months[$ym])
+            && ! isset($dismissed[$factorId][$ym])
+            && ($factors[$factorId]['active'] ?? false)
+            && $this->isRecurring($months, $month);
+    }
+
+    /**
+     * Tanpa entri di bulan itu dan belum ada tanda "tidak ada data" apa pun: tanda untuk satu faktor
+     * saja sudah berarti bulan itu sudah diperiksa user, jadi tidak lagi disebut "belum ada entri".
+     *
+     * @param  array<int, array<int, string>>  $records  [faktor][Ym]
+     * @param  array<int, array<int, true>>  $dismissed  [faktor, 0 = seluruh project][Ym]
+     */
+    private function isEmpty(array $records, array $dismissed, int $ym): bool
+    {
+        return collect($records)->every(fn (array $months) => ! isset($months[$ym]))
+            && collect($dismissed)->every(fn (array $months) => ! isset($months[$ym]));
+    }
+
+    /** Dibandingkan sebagai tanggal (bukan waktu), sama dengan expectedProjects() */
     private function coversMonth(Project $project, CarbonImmutable $month): bool
     {
-        return $project->start_date->lte($month->endOfMonth())
-            && ($project->end_date === null || $project->end_date->gte($month));
+        return $project->start_date->toDateString() <= $month->endOfMonth()->toDateString()
+            && ($project->end_date === null || $project->end_date->toDateString() >= $month->toDateString());
     }
 
     /**
      * @param  array<int>  $ids
-     * @return array<int, string>
+     * @return array<int, array{name: string, active: bool}>
      */
-    private function factorNames(array $ids): array
+    private function factorInfo(array $ids): array
     {
         if ($ids === []) {
             return [];
         }
 
         /** @var EloquentCollection<int, EmissionFactor> $factors */
-        $factors = EmissionFactor::whereIn('id', array_unique($ids))->get(['id', 'name']);
+        $factors = EmissionFactor::whereIn('id', array_unique($ids))->get(['id', 'name', 'is_active']);
 
-        return $factors->pluck('name', 'id')->all();
+        return $factors->mapWithKeys(fn (EmissionFactor $f) => [$f->id => ['name' => $f->name, 'active' => (bool) $f->is_active]])->all();
     }
 
     private function ym(CarbonImmutable $month): int

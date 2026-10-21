@@ -9,6 +9,7 @@ use App\Notifications\DataReminderNotification;
 use App\Services\DataCompletenessService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Throwable;
 
 /**
  * Pengingat data bulan lalu (dijadwalkan tanggal 5 dan 10). Owner/member project diingatkan faktor rutin
@@ -46,6 +47,8 @@ class SendDataReminders extends Command
         $reminders = $this->remindersPerUser($service, $month, $round);
         $users = User::whereIn('id', array_keys($reminders))->get()->keyBy('id');
 
+        $sent = 0;
+        $failed = 0;
         foreach ($reminders as $userId => $reminder) {
             $user = $users[$userId];
             if ($dryRun) {
@@ -54,19 +57,30 @@ class SendDataReminders extends Command
 
                 continue;
             }
-            $user->notify(new DataReminderNotification($reminder));
+            // Satu penerima yang gagal tidak menghentikan pengiriman ke penerima lain
+            try {
+                $user->notify(new DataReminderNotification($reminder));
+                $sent++;
+            } catch (Throwable $e) {
+                report($e);
+                $failed++;
+                $this->error("Gagal mengirim pengingat ke user #{$userId}: {$e->getMessage()}");
+            }
         }
 
+        // Dicatat walau ada yang gagal: --force mengirim ulang ke SEMUA penerima, jadi kegagalan dilaporkan
+        // lewat log/Sentry dan kode keluar, bukan dengan mengulang putaran
         if (! $dryRun) {
             DataReminderRun::updateOrCreate(
                 ['period' => $period, 'round' => $round],
-                ['recipient_count' => count($reminders), 'ran_at' => now()],
+                ['recipient_count' => $sent, 'ran_at' => now()],
             );
         }
 
-        $this->info(($dryRun ? '(dry run) ' : '')."Pengingat putaran {$round} {$service->label($month)}: ".count($reminders).' penerima.');
+        $this->info(($dryRun ? '(dry run) ' : '')."Pengingat putaran {$round} {$service->label($month)}: "
+            .($dryRun ? count($reminders) : $sent).' penerima'.($failed ? ", {$failed} gagal" : '').'.');
 
-        return self::SUCCESS;
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 
     /** @return array<int, array{period_label: string, round: int, projects: list<array>, unsubmitted: list<array>}> */

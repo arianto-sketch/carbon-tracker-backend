@@ -136,6 +136,47 @@ class DataCompletenessTest extends TestCase
             ->assertJsonCount(0, 'data.incomplete');
     }
 
+    public function test_deactivated_factors_are_never_reported_missing(): void
+    {
+        EmissionFactor::where('slug', 'electricity_jawa_bali')->update(['is_active' => false]);
+
+        $this->assertSame(['recorded', 'recorded', 'none'], $this->statuses('Listrik PLN Jawa-Bali'));
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/v1/dashboard/data-completeness')
+            ->assertJsonCount(0, 'data.incomplete');
+    }
+
+    public function test_marking_every_recurring_factor_means_the_month_is_not_empty(): void
+    {
+        $other = $this->makeProject($this->owner, 'PRJ-2');
+        $this->makeApprovedEntry($other, $this->owner, 100, '2026-08-20', 'electricity_jawa_bali');
+        $this->makeApprovedEntry($other, $this->owner, 100, '2026-09-20', 'electricity_jawa_bali');
+        $electricity = EmissionFactor::where('slug', 'electricity_jawa_bali')->value('id');
+
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/v1/dashboard/data-completeness')
+            ->assertJsonPath('data.incomplete.1.empty', true)
+            ->assertJsonPath('data.incomplete.1.missing_factors', ['Listrik PLN Jawa-Bali']);
+
+        $this->actingAs($this->owner, 'sanctum')->postJson("/api/v1/projects/{$other->id}/data-gaps/dismissals",
+            ['period_year' => 2026, 'period_month' => 10, 'emission_factor_id' => $electricity])->assertCreated();
+
+        $this->actingAs($this->owner, 'sanctum')->getJson('/api/v1/dashboard/data-completeness')
+            ->assertJsonCount(1, 'data.incomplete')
+            ->assertJsonPath('data.incomplete.0.id', $this->project->id);
+    }
+
+    public function test_months_follow_business_time_across_a_year_boundary(): void
+    {
+        // 31 Jan 2027 18.00 UTC = 1 Feb 2027 01.00 WIB: bulan terakhir yang lengkap = Januari 2027
+        $this->travelTo(Carbon::parse('2027-01-31 18:00', 'UTC'));
+        $this->makeApprovedEntry($this->project, $this->member, 500, '2026-11-20', 'electricity_jawa_bali');
+        $this->makeApprovedEntry($this->project, $this->member, 500, '2026-12-20', 'electricity_jawa_bali');
+
+        $this->actingAs($this->owner, 'sanctum')->getJson($this->url('/data-completeness'))
+            ->assertJsonPath('data.months.0.label', 'November 2026')
+            ->assertJsonPath('data.months.2.label', 'Januari 2027');
+        $this->assertSame(['recorded', 'recorded', 'missing'], $this->statuses('Listrik PLN Jawa-Bali'));
+    }
+
     public function test_projects_outside_their_date_range_are_not_expected_to_have_data(): void
     {
         $this->project->update(['end_date' => '2026-09-30']);

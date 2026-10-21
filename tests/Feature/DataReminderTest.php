@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DataGapDismissal;
+use App\Models\DataReminderRun;
 use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
@@ -132,6 +133,22 @@ class DataReminderTest extends TestCase
 
         $this->artisan('entries:send-data-reminders --force')->assertSuccessful();
         Notification::assertSentToTimes($this->owner, DataReminderNotification::class, 2);
+    }
+
+    public function test_a_failing_recipient_does_not_stop_the_others(): void
+    {
+        $member = $this->member;
+        Notification::partialMock()->shouldReceive('send')->andReturnUsing(function ($notifiable) use ($member) {
+            if ($notifiable->is($member)) {
+                throw new \RuntimeException('database tidak bisa ditulis');
+            }
+        });
+
+        $this->artisan('entries:send-data-reminders')
+            ->expectsOutputToContain("Gagal mengirim pengingat ke user #{$member->id}")
+            ->assertFailed();
+
+        $this->assertSame(1, DataReminderRun::where('period', '2026-10')->value('recipient_count'));
     }
 
     public function test_dry_run_lists_recipients_without_sending(): void
