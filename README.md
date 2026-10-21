@@ -40,6 +40,8 @@ php artisan serve                   # http://127.0.0.1:8000
 
   Scheduler juga memperbarui nilai faktor emisi "saat ini" setiap pukul 00.05 WIB (`factors:sync-current-values`). Setiap tanggal 1 pukul 07.00 WIB, scheduler mengirim email ringkasan emisi bulan lalu ke owner project dan admin (`reports:send-monthly-summaries`). Perintah ini bisa dijalankan manual dengan `--month=YYYY-MM`, `--dry-run` (lihat penerima tanpa mengirim), atau `--force` (kirim ulang periode yang sudah terkirim).
 
+  Setiap tanggal 5 pukul 08.00 WIB, owner/member project diingatkan data bulan lalu yang belum dicatat: faktor rutin (tercatat di minimal 2 dari 3 bulan sebelumnya) dan project aktif tanpa entri. Pembuat entri juga diingatkan draft/ditolak yang belum diajukan. Tanggal 10 ada pengingat ulang untuk yang masih kosong; item yang ditandai "tidak ada data" di tab Kelengkapan tidak diingatkan (`entries:send-data-reminders --round=1|2`, juga mendukung `--month`, `--dry-run`, `--force`).
+
 ### Batas & keamanan API
 
 - Endpoint ber-auth dibatasi **120 request per menit per user** (`API_RATE_LIMIT`), dan respons 429 berformat JSON. Login punya batas sendiri: 5 per menit per email + IP.

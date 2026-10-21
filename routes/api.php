@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\CarbonEntryController;
 use App\Http\Controllers\Api\V1\CarbonEntryImportController;
 use App\Http\Controllers\Api\V1\CarbonTargetController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\DataCompletenessController;
 use App\Http\Controllers\Api\V1\EmissionCategoryController;
 use App\Http\Controllers\Api\V1\EmissionFactorController;
 use App\Http\Controllers\Api\V1\EmissionFactorValueController;
@@ -117,6 +118,11 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [ReductionInitiativeController::class, 'destroy']);
         });
 
+        // Kelengkapan data bulanan dan penanda "tidak ada data bulan ini"
+        Route::get('projects/{projectId}/data-completeness', [DataCompletenessController::class, 'show']);
+        Route::post('projects/{projectId}/data-gaps/dismissals', [DataCompletenessController::class, 'dismiss']);
+        Route::delete('projects/{projectId}/data-gaps/dismissals', [DataCompletenessController::class, 'undismiss']);
+
         // Dashboard
         Route::prefix('dashboard')->group(function () {
             Route::get('/summary', [DashboardController::class, 'summary']);
@@ -128,6 +134,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/top-entries', [DashboardController::class, 'topEntries']);
             Route::get('/target-alerts', [DashboardController::class, 'targetAlerts']);
             Route::get('/initiatives', [DashboardController::class, 'initiatives']);
+            Route::get('/data-completeness', [DashboardController::class, 'dataCompleteness']);
         });
 
         // Reports

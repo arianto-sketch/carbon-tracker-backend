@@ -37,6 +37,15 @@ Schedule::command('reports:send-monthly-summaries')
 // Status backup harian dan off-site (ditulis service backup/offsite); email admin saat bermasalah dan saat pulih
 Schedule::command('backups:check')->hourly()->withoutOverlapping()->onOneServer();
 
+// Pengingat data bulan lalu yang belum dicatat/diajukan: tanggal 5, lalu ulang tanggal 10 untuk yang masih kosong
+foreach ([1 => 5, 2 => 10] as $round => $day) {
+    Schedule::command("entries:send-data-reminders --round={$round}")
+        ->monthlyOn($day, '08:00')
+        ->timezone(config('app.business_timezone'))
+        ->withoutOverlapping()
+        ->onOneServer();
+}
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
