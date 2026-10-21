@@ -34,6 +34,9 @@ Schedule::command('reports:send-monthly-summaries')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Status backup harian dan off-site (ditulis service backup/offsite); email admin saat bermasalah dan saat pulih
+Schedule::command('backups:check')->hourly()->withoutOverlapping()->onOneServer();
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

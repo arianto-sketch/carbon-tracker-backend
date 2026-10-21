@@ -11,6 +11,7 @@ Internet ──► caddy :443 (opsional, HTTPS otomatis) ──► web :8080 (ng
                                                     queue (laporan, email) ┘     ▲
                                                     scheduler (tugas harian) ────┤
                                                     backup (mysqldump harian) ───┘
+                                                    offsite (salinan terenkripsi) ──► object storage S3
 ```
 
 - SPA dan API berada di satu domain, jadi tidak perlu CORS.
@@ -22,9 +23,10 @@ Internet ──► caddy :443 (opsional, HTTPS otomatis) ──► web :8080 (ng
 | `app` | Laravel API (php-fpm) |
 | `web` | nginx: menyajikan SPA dan meneruskan `/api` ke `app` |
 | `queue` | Worker antrean: generate laporan Excel dan kirim email notifikasi approval |
-| `scheduler` | Tugas terjadwal: hapus token kedaluwarsa, purge lampiran entri terhapus |
+| `scheduler` | Tugas terjadwal: hapus token kedaluwarsa, purge lampiran entri terhapus, ringkasan bulanan, pemeriksaan backup tiap jam |
 | `mysql` | Database MySQL 8.4 |
 | `backup` | Backup harian database dan lampiran, simpan 14 hari |
+| `offsite` | Salinan backup terenkripsi ke object storage S3-compatible (nonaktif sampai dikonfigurasi) |
 | `caddy` | Hanya dengan `compose.tls.yml`: sertifikat Let's Encrypt dan HTTPS |
 
 ## Kebutuhan server
@@ -105,9 +107,70 @@ Service `backup` berjalan terus:
 **Penting:**
 
 - **File backup hanya bisa dibaca root** (izin `600`), karena isinya data pribadi user (email, hash password). Gunakan `sudo` untuk menyalinnya.
-- **Folder `backups/` ada di server yang sama.** Backup ini tidak melindungi dari server yang rusak atau hilang. Salin secara berkala ke lokasi lain, mis. dengan cron `rclone sync ./backups remote:carbon-tracker-backups` atau `rsync` ke server lain. Isinya data pribadi user, jadi simpan di tempat yang terenkripsi dan aksesnya terbatas.
-- **Uji restore minimal sebulan sekali.** Jalankan stack yang sama di server atau VM lain, salin satu pasang file backup ke `backups/`, lalu jalankan `make restore` dan `make restore-storage`, dan pastikan data bisa dibuka di aplikasi.
+- **Folder `backups/` ada di server yang sama.** Backup ini tidak melindungi dari server yang rusak atau hilang. Aktifkan [backup off-site](#backup-off-site).
+- **Uji restore minimal sebulan sekali.** Lihat [uji restore dari off-site](#uji-restore-dari-off-site).
 - Restore mengembalikan database ke kondisi saat backup. Data yang dibuat setelah waktu backup hilang, tetapi masih ada di file `*-pre-restore.sql.gz`.
+
+### Peringatan backup
+
+Scheduler menjalankan `php artisan backups:check` setiap jam. Perintah ini membaca status yang ditulis service `backup` dan `offsite`, lalu mengirim email ke semua admin aktif bila:
+
+- backup harian terakhir gagal, atau tidak ada backup yang berhasil dalam `BACKUP_MAX_AGE_HOURS` jam (default 26);
+- salinan off-site aktif tetapi tidak berhasil diperbarui dalam `OFFSITE_MAX_AGE_HOURS` jam (default 6; gangguan jaringan sesaat tidak dilaporkan);
+- service `offsite` tidak mencatat status sama sekali (container tidak berjalan).
+
+Email dikirim sekali per masalah, lalu sekali lagi saat kondisi pulih. Email ini dikirim langsung (tidak lewat queue) dan tidak bisa dimatikan dari Profil, jadi pastikan `MAIL_*` di `.env` benar. Cek manual: `docker compose exec scheduler php artisan backups:check`.
+
+## Backup off-site
+
+Service `offsite` mengenkripsi setiap backup harian dengan [age](https://age-encryption.org) memakai **kunci publik**, lalu meng-upload hasilnya (`*.age`) ke object storage S3-compatible lewat rclone setiap 30 menit.
+
+- **Kunci privat tidak pernah ada di server.** Bila server atau kredensial bucket bocor, isi backup tetap tidak terbaca. Konsekuensinya, tanpa kunci privat backup off-site tidak bisa dipulihkan sama sekali.
+- **Masa simpan di bucket:** backup 14 hari terakhir (`OFFSITE_KEEP_DAILY`) ditambah backup pertama setiap bulan selama 12 bulan (`OFFSITE_KEEP_MONTHLY`). Dihitung dari backup terbaru, jadi bila backup berhenti, salinan lama tidak ikut habis. File lain di bucket tidak disentuh, dan backup `*-pre-restore` tidak di-upload.
+- Log: `make logs SERVICE=offsite`.
+
+### Mengaktifkan
+
+1. **Buat bucket** di provider pilihan (AWS S3, Cloudflare R2, Backblaze B2, Wasabi, atau object storage lokal), sebaiknya di region atau provider yang berbeda dari server. Buat access key khusus yang hanya boleh mengakses bucket itu: daftar, baca, tulis, dan hapus objek. Izin membuat bucket tidak diperlukan.
+2. **Buat kunci age**:
+
+   ```bash
+   make offsite-keygen > /tmp/offsite-kunci.txt
+   ```
+
+   Pindahkan isi file itu (baris `AGE-SECRET-KEY-...` adalah kunci privat) ke password manager atau penyimpanan aman lain **di luar server**, lalu hapus filenya: `shred -u /tmp/offsite-kunci.txt`. Simpan minimal di dua tempat; kunci yang hilang berarti backup off-site tidak bisa dibuka.
+3. **Isi `.env`**: `OFFSITE_AGE_RECIPIENT` dengan kunci publik (baris `# public key: age1...`), lalu `OFFSITE_S3_*`. Contoh:
+
+   | Provider | `OFFSITE_S3_PROVIDER` | `OFFSITE_S3_ENDPOINT` | `OFFSITE_S3_REGION` |
+   | --- | --- | --- | --- |
+   | AWS S3 | `AWS` | (kosong) | mis. `ap-southeast-3` |
+   | Cloudflare R2 | `Cloudflare` | `https://<account-id>.r2.cloudflarestorage.com` | `auto` |
+   | Backblaze B2 | `Other` | `https://s3.<region>.backblazeb2.com` | mis. `us-west-004` |
+   | Wasabi | `Wasabi` | `https://s3.<region>.wasabisys.com` | mis. `ap-southeast-1` |
+
+4. **Terapkan dan uji**: `docker compose up -d offsite`, lalu `make offsite-sync` dan `make offsite-list`. Daftar harus berisi file `db-...sql.gz.age` dan `storage-...tar.gz.age`.
+
+Untuk perlindungan tambahan dari penghapusan (mis. kredensial server dipakai pihak lain), aktifkan *versioning* atau *object lock* di bucket bila provider mendukung.
+
+### Memulihkan dari off-site
+
+Bila server hilang: siapkan server baru sampai `make setup` selesai, dengan `.env` berisi `OFFSITE_*` yang sama. `APP_KEY` boleh baru; akibatnya hanya semua user harus login ulang. Lalu:
+
+```bash
+make offsite-list                                   # pilih pasangan db-... dan storage-... terbaru
+# salin kunci privat sementara ke server, mis. /root/offsite-kunci.txt (chmod 600)
+make offsite-fetch FILE=db-20261020-190000.sql.gz IDENTITY=/root/offsite-kunci.txt
+make offsite-fetch FILE=storage-20261020-190000.tar.gz IDENTITY=/root/offsite-kunci.txt
+shred -u /root/offsite-kunci.txt                    # kunci privat jangan tertinggal di server
+make restore FILE=db-20261020-190000.sql.gz
+make restore-storage FILE=storage-20261020-190000.tar.gz
+```
+
+`make offsite-fetch` mengunduh, mendekripsi, dan memeriksa keutuhan arsip, lalu menaruh hasilnya di folder backup. Ia menolak menimpa file yang sudah ada.
+
+### Uji restore dari off-site
+
+Minimal sebulan sekali, jalankan langkah [memulihkan dari off-site](#memulihkan-dari-off-site) di server atau VM terpisah (bukan server production), lalu pastikan data dan lampiran bisa dibuka di aplikasi. Uji ini sekaligus memastikan kunci privat yang tersimpan masih cocok.
 
 ## Monitoring error (Sentry)
 

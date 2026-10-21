@@ -7,12 +7,16 @@
 #   restore FILE    pulihkan database persis seperti FILE (db-*.sql.gz); backup dulu kondisi saat ini
 #   stream FILE     kirim isi arsip lampiran (storage-*.tar.gz) ke stdout, untuk make restore-storage
 #   list            daftar file backup
+#
+# Hasil schedule/run dicatat di STATUS_DIR/backup.json (volume backup_status), dibaca
+# `php artisan backups:check` di scheduler untuk email peringatan ke admin.
 set -uo pipefail
 # File backup berisi data pribadi (email, hash password): hanya bisa dibaca pemiliknya
 umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 STORAGE_DIR="${STORAGE_DIR:-/storage}"
+STATUS_DIR="${STATUS_DIR:-/status}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 BACKUP_TIME_UTC="${BACKUP_TIME_UTC:-19:00}"
 DB_NAME="${DB_DATABASE:?DB_DATABASE belum diisi}"
@@ -88,6 +92,31 @@ run_backup() {
     return "$status"
 }
 
+# Status tidak berisi data pribadi: bisa dibaca container scheduler (bukan root). Tanpa folder status, dilewati.
+# $1 = kode keluar run_backup
+write_status() {
+    [ -d "$STATUS_DIR" ] || return 0
+    local file="${STATUS_DIR}/backup.json" now last_success error=null
+    now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    last_success=$(sed -n 's/.*"last_success_at": *"\([^"]*\)".*/\1/p' "$file" 2>/dev/null)
+    if [ "$1" -eq 0 ]; then
+        last_success=$now
+    else
+        error='"backup database atau lampiran gagal (lihat: make logs SERVICE=backup)"'
+    fi
+    printf '{"last_attempt_at": "%s", "last_success_at": %s, "last_error": %s}\n' \
+        "$now" "$( [ -n "$last_success" ] && echo "\"${last_success}\"" || echo null )" "$error" \
+        > "${file}.tmp" && chmod 644 "${file}.tmp" && mv "${file}.tmp" "$file"
+}
+
+backup_and_record() {
+    local status
+    run_backup
+    status=$?
+    write_status "$status"
+    return "$status"
+}
+
 seconds_until_next_run() {
     local now target
     now=$(date -u +%s)
@@ -108,7 +137,7 @@ schedule() {
         log "backup berikutnya dalam $((wait_for / 3600)) jam $((wait_for % 3600 / 60)) menit"
         sleep "$wait_for" &
         wait $!
-        run_backup || log "GAGAL: backup tidak lengkap, dicoba lagi pada jadwal berikutnya"
+        backup_and_record || log "GAGAL: backup tidak lengkap, dicoba lagi pada jadwal berikutnya"
     done
 }
 
@@ -150,7 +179,7 @@ restore() {
 
 case "${1:-schedule}" in
     schedule) schedule ;;
-    run) run_backup ;;
+    run) backup_and_record ;;
     restore) restore "${2:-}" ;;
     stream)
         file=$(backup_file "${2:-}" 'storage-*.tar.gz') || exit 1

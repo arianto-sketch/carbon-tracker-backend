@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Uji asap stack Docker yang sudah berjalan (`make setup`), seperti pemeriksaan setelah deploy:
 # admin + data master, nginx (SPA, header, cache aset), API lewat nginx, queue worker (laporan),
-# backup (retensi) dan restore. Butuh curl dan jq. Dipakai workflow .github/workflows/docker.yml.
+# backup (retensi), pemeriksaan status backup, off-site terenkripsi ke S3 lokal (overlay
+# .github/compose.offsite-ci.yml), dan restore. Butuh curl dan jq. Dipakai workflow .github/workflows/docker.yml.
 set -euo pipefail
 
 BASE="${BASE_URL:-http://localhost:8080}"
@@ -72,6 +73,65 @@ sudo gzip -t "$db_file"
 sudo zcat "$db_file" | grep -q 'CREATE TABLE `users`' || fail "dump tidak berisi tabel users"
 sudo tar -tzf "$storage_file" > /dev/null
 [ ! -e "${BACKUP_PATH}/db-20000101-000000.sql.gz" ] || fail "backup lebih dari 14 hari tidak dihapus"
+
+step "Pemeriksaan backup (scheduler): status ditulis service backup, off-site masih nonaktif"
+check=$(docker compose exec -T scheduler php artisan backups:check) || fail "backups:check melaporkan masalah: ${check}"
+echo "$check"
+grep -q 'off-site nonaktif' <<< "$check" || fail "backups:check tidak membaca status backup dan off-site"
+
+step "Off-site: backup dienkripsi (age) ke S3, masa simpan diterapkan, bisa diunduh dan didekripsi"
+key_file=$(mktemp)
+make offsite-keygen > "$key_file"
+recipient=$(sed -n 's/^# public key: //p' "$key_file")
+[[ "$recipient" == age1* ]] || fail "make offsite-keygen tidak menghasilkan kunci publik age"
+# S3 lokal (rclone serve s3) dari overlay CI; nilai lain sama seperti pengisian .env di server
+cat >> .env <<EOF
+COMPOSE_FILE=compose.yml:.github/compose.offsite-ci.yml
+OFFSITE_AGE_RECIPIENT=${recipient}
+OFFSITE_S3_PROVIDER=Other
+OFFSITE_S3_ENDPOINT=http://s3:9000
+OFFSITE_S3_REGION=us-east-1
+OFFSITE_S3_BUCKET=ci-backups
+OFFSITE_S3_ACCESS_KEY_ID=ci-access-key
+OFFSITE_S3_SECRET_ACCESS_KEY=ci-secret-key
+EOF
+# Hanya S3 yang dinyalakan: sinkron dijalankan lewat make di bawah, tidak berbarengan dengan
+# service offsite yang terjadwal (di server cukup: docker compose up -d offsite)
+docker compose up -d s3
+remote=offsite:ci-backups/carbon-tracker
+rclone_ci() { docker compose run --rm -T --no-deps --entrypoint rclone offsite "$@"; }
+for _ in $(seq 1 15); do
+    rclone_ci lsf "offsite:ci-backups" > /dev/null 2>&1 && break
+    sleep 2
+done
+# Sudah ada di remote: backup sangat lama (dihapus), backup pertama dan pertengahan bulan ~40 hari lalu
+# (yang pertama disimpan sebagai bulanan, yang lain dihapus), dan file lain (tidak boleh disentuh)
+month=$(date -u -d '-40 days' +%Y%m)
+for name in db-20000101-000000.sql.gz.age "db-${month}01-000000.sql.gz.age" "db-${month}15-000000.sql.gz.age" catatan.txt; do
+    echo lama | rclone_ci rcat "${remote}/${name}"
+done
+make offsite-sync
+listing=$(make offsite-list)
+echo "$listing"
+for name in "$(basename "$db_file").age" "$(basename "$storage_file").age" "db-${month}01-000000.sql.gz.age" catatan.txt; do
+    grep -q "$name" <<< "$listing" || fail "${name} tidak ada di off-site"
+done
+for name in db-20000101-000000.sql.gz.age "db-${month}15-000000.sql.gz.age"; do
+    ! grep -q "$name" <<< "$listing" || fail "${name} seharusnya dihapus (lewat masa simpan)"
+done
+! grep -q 'pre-restore' <<< "$listing" || fail "backup pre-restore ikut di-upload"
+# Isi di off-site terenkripsi, bukan gzip yang bisa langsung dibaca
+[ "$(rclone_ci cat --head 21 "${remote}/$(basename "$db_file").age")" = "age-encryption.org/v1" ] \
+    || fail "file di off-site tidak terenkripsi age"
+# Unduh + dekripsi dengan kunci privat: hasilnya identik dengan backup asli
+sudo mv "$db_file" "${db_file}.asli"
+make offsite-fetch FILE="$(basename "$db_file")" IDENTITY="$key_file"
+sudo cmp "$db_file" "${db_file}.asli" || fail "hasil unduh off-site berbeda dengan backup asli"
+sudo rm "${db_file}.asli"
+rm -f "$key_file"
+check=$(docker compose exec -T scheduler php artisan backups:check) || fail "backups:check melaporkan masalah: ${check}"
+echo "$check"
+grep -q 'off-site terakhir' <<< "$check" || fail "backups:check tidak membaca status off-site"
 
 step "Restore: data setelah backup hilang, data sebelum backup kembali"
 db_user=$(sed -n 's/^DB_USERNAME=//p' .env); db_pass=$(sed -n 's/^DB_PASSWORD=//p' .env); db_name=$(sed -n 's/^DB_DATABASE=//p' .env)
