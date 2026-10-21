@@ -26,7 +26,9 @@ class BackupStatusService
         $backup = $this->read('backup');
         $maxAge = (int) config('backups.max_age_hours');
 
-        if ($backup === null) {
+        if ($backup === false) {
+            $problems['backup_status_invalid'] = 'File status backup (backup.json) rusak atau tidak bisa dibaca.';
+        } elseif ($backup === null) {
             $problems['backup_never'] = 'Belum ada catatan backup harian. Service backup belum pernah berjalan atau volume status tidak terpasang.';
         } else {
             $lastSuccess = $this->time($backup['last_success_at'] ?? null);
@@ -42,7 +44,9 @@ class BackupStatusService
         }
 
         $offsite = $this->read('offsite');
-        if ($offsite === null) {
+        if ($offsite === false) {
+            $problems['offsite_status_invalid'] = 'File status off-site (offsite.json) rusak atau tidak bisa dibaca.';
+        } elseif ($offsite === null) {
             $problems['offsite_missing'] = 'Service offsite tidak mencatat status (container tidak berjalan?).';
         } elseif (($offsite['enabled'] ?? false) === true) {
             $offsiteMaxAge = (int) config('backups.offsite_max_age_hours');
@@ -61,8 +65,8 @@ class BackupStatusService
     /** Ringkasan satu baris untuk output command saat semuanya normal */
     public function summary(): string
     {
-        $backup = $this->time($this->read('backup')['last_success_at'] ?? null);
-        $offsite = $this->read('offsite');
+        $backup = $this->time(($this->read('backup') ?: [])['last_success_at'] ?? null);
+        $offsite = $this->read('offsite') ?: [];
         $offsiteText = ($offsite['enabled'] ?? false) === true
             ? 'off-site terakhir '.$this->format($this->time($offsite['last_success_at'] ?? null))
             : 'off-site nonaktif';
@@ -70,17 +74,25 @@ class BackupStatusService
         return 'Backup normal: harian terakhir '.$this->format($backup).", {$offsiteText}.";
     }
 
-    /** @return array<string, mixed>|null null bila file tidak ada atau tidak bisa dibaca */
-    private function read(string $name): ?array
+    /**
+     * Dibedakan supaya pesan email tepat: file tidak ada (service belum/tidak berjalan) vs file
+     * ada tetapi rusak atau tidak bisa dibaca (mis. izin file).
+     *
+     * @return array<string, mixed>|false|null null = tidak ada, false = rusak/tidak terbaca
+     */
+    private function read(string $name): array|false|null
     {
         $file = rtrim((string) config('backups.status_path'), '/')."/{$name}.json";
-        if (! is_file($file) || ! is_readable($file)) {
+        if (! file_exists($file)) {
             return null;
+        }
+        if (! is_readable($file)) {
+            return false;
         }
 
         $data = json_decode((string) file_get_contents($file), true);
 
-        return is_array($data) ? $data : null;
+        return is_array($data) ? $data : false;
     }
 
     private function time(mixed $value): ?Carbon

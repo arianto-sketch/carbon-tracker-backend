@@ -156,6 +156,12 @@ services:
     build:
       context: ./docker/offsite
     command: ["schedule"]
+    # Kunci akses bucket (RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID / _SECRET_ACCESS_KEY) sengaja tidak di .env:
+    # .env dibaca app/queue/scheduler, jadi aplikasi yang dibobol tidak ikut memegang kunci untuk
+    # menghapus salinan off-site. Dibuat dengan `make offsite-credentials`.
+    env_file:
+      - path: ./secrets/offsite.env
+        required: false
     environment:
       OFFSITE_AGE_RECIPIENT: ${OFFSITE_AGE_RECIPIENT:-}
       OFFSITE_S3_BUCKET: ${OFFSITE_S3_BUCKET:-}
@@ -163,13 +169,11 @@ services:
       OFFSITE_INTERVAL_MINUTES: ${OFFSITE_INTERVAL_MINUTES:-30}
       OFFSITE_KEEP_DAILY: ${OFFSITE_KEEP_DAILY:-14}
       OFFSITE_KEEP_MONTHLY: ${OFFSITE_KEEP_MONTHLY:-12}
-      # Remote rclone "offsite" (tanpa file rclone.conf); hanya kredensial bucket, bukan isi .env lain
+      # Remote rclone "offsite" tanpa file rclone.conf; kunci aksesnya dari secrets/offsite.env
       RCLONE_CONFIG_OFFSITE_TYPE: s3
       RCLONE_CONFIG_OFFSITE_PROVIDER: ${OFFSITE_S3_PROVIDER:-Other}
       RCLONE_CONFIG_OFFSITE_ENDPOINT: ${OFFSITE_S3_ENDPOINT:-}
       RCLONE_CONFIG_OFFSITE_REGION: ${OFFSITE_S3_REGION:-}
-      RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${OFFSITE_S3_ACCESS_KEY_ID:-}
-      RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${OFFSITE_S3_SECRET_ACCESS_KEY:-}
       # Kunci akses cukup izin daftar/baca/tulis/hapus objek; tidak perlu izin membuat bucket
       RCLONE_CONFIG_OFFSITE_NO_CHECK_BUCKET: "true"
     volumes:

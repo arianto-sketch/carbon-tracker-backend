@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Notification;
 /**
  * Dijalankan scheduler tiap jam. Email ke admin aktif hanya saat kumpulan masalah berubah (masalah
  * baru muncul), lalu sekali saat semuanya pulih, bukan setiap jam selama masalah berlangsung.
+ * Masalah yang sudah dilaporkan dicatat di cache: setelah `cache:clear`, masalah yang masih
+ * berlangsung dilaporkan sekali lagi.
  */
 class CheckBackups extends Command
 {
@@ -35,14 +37,21 @@ class CheckBackups extends Command
         $current = $problems === [] ? null : implode(',', array_keys($problems));
         $reported = Cache::get(self::REPORTED_KEY);
 
-        if ($current !== null && $current !== $reported) {
-            $this->notifyAdmins(new BackupProblemNotification($problems));
-        } elseif ($current === null && $reported !== null) {
-            $this->notifyAdmins(new BackupRecoveredNotification($status->summary()));
-        }
+        $isNew = array_diff(array_keys($problems), explode(',', (string) $reported)) !== [];
 
-        // Dicatat setelah email terkirim: bila pengiriman gagal, dicoba lagi pada pemeriksaan berikutnya
-        $current === null ? Cache::forget(self::REPORTED_KEY) : Cache::forever(self::REPORTED_KEY, $current);
+        if ($current !== null && $isNew) {
+            // Dicatat hanya bila email sampai ke admin: gagal kirim (exception) atau belum ada admin
+            // aktif berarti dilaporkan lagi pada pemeriksaan berikutnya
+            if ($this->notifyAdmins(new BackupProblemNotification($problems))) {
+                Cache::forever(self::REPORTED_KEY, $current);
+            }
+        } elseif ($current !== null) {
+            // Sebagian masalah yang sudah dilaporkan pulih, yang lain masih ada: tanpa email baru
+            Cache::forever(self::REPORTED_KEY, $current);
+        } elseif ($reported !== null) {
+            $this->notifyAdmins(new BackupRecoveredNotification($status->summary()));
+            Cache::forget(self::REPORTED_KEY);
+        }
 
         if ($problems === []) {
             $this->info($status->summary());
@@ -57,16 +66,19 @@ class CheckBackups extends Command
         return self::FAILURE;
     }
 
-    private function notifyAdmins(object $notification): void
+    /** @return bool false bila tidak ada admin aktif yang bisa menerima */
+    private function notifyAdmins(object $notification): bool
     {
         $admins = User::query()->where('role', 'admin')->where('is_active', true)->get();
 
         if ($admins->isEmpty()) {
             $this->warn('Tidak ada admin aktif untuk menerima email backup.');
 
-            return;
+            return false;
         }
 
         Notification::sendNow($admins, $notification);
+
+        return true;
     }
 }

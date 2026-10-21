@@ -27,7 +27,8 @@ MYSQL_ARGS=(-h "${DB_HOST:-mysql}" -u "${DB_USERNAME:?DB_USERNAME belum diisi}")
 log() { echo "[backup] $(date -u '+%Y-%m-%d %H:%M:%S') UTC $*"; }
 die() { echo "$*" >&2; exit 1; }
 
-if ! [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] || (( RETENTION_DAYS < 1 )); then
+# Tanpa nol di depan: "08" akan dibaca bash sebagai bilangan oktal yang tidak valid
+if ! [[ "$RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]]; then
     die "BACKUP_RETENTION_DAYS harus bilangan bulat >= 1 (sekarang: ${RETENTION_DAYS})"
 fi
 
@@ -104,9 +105,12 @@ write_status() {
     else
         error='"backup database atau lampiran gagal (lihat: make logs SERVICE=backup)"'
     fi
+    # File sementara unik: jadwal dan `make backup` bisa menulis status bersamaan
+    local tmp
+    tmp=$(mktemp "${file}.XXXXXX") || return 1
     printf '{"last_attempt_at": "%s", "last_success_at": %s, "last_error": %s}\n' \
         "$now" "$( [ -n "$last_success" ] && echo "\"${last_success}\"" || echo null )" "$error" \
-        > "${file}.tmp" && chmod 644 "${file}.tmp" && mv "${file}.tmp" "$file"
+        > "$tmp" && chmod 644 "$tmp" && mv "$tmp" "$file"
 }
 
 backup_and_record() {

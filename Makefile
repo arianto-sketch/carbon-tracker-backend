@@ -21,6 +21,7 @@ FRONTEND_REPO  ?= https://github.com/arianto-sketch/carbon-tracker-frontend.git
 # Folder backup di host (sama dengan BACKUP_PATH yang dipakai compose); tujuan make offsite-fetch
 BACKUP_PATH    ?= $(or $(shell sed -n 's/^BACKUP_PATH=//p' .env 2>/dev/null | tail -n 1),./backups)
 ROOT_PW_FILE   := secrets/db_root_password
+OFFSITE_CRED_FILE := secrets/offsite.env
 
 # exec tanpa TTY bila tidak dijalankan dari terminal (script, cron, CI)
 EXEC_TTY := $(shell [ -t 0 ] || echo -T)
@@ -51,7 +52,7 @@ endif
 .PHONY: help setup secrets frontend key pull build up down restart ps logs shell tinker \
         migrate seed-master create-admin deploy \
         backup backups restore restore-storage \
-        offsite-keygen offsite-sync offsite-list offsite-fetch \
+        offsite-keygen offsite-credentials offsite-sync offsite-list offsite-fetch \
         compose-check test lint format analyse ci
 
 # ----- Bantuan -----
@@ -176,15 +177,27 @@ restore-storage: ## Pulihkan lampiran. Pakai: make restore-storage FILE=storage-
 
 # ----- Backup off-site -----
 
-# @: baris perintah tidak ikut tercetak, jadi output bisa langsung disimpan sebagai file kunci (make offsite-keygen > kunci.txt)
+# @: baris perintah tidak ikut tercetak, jadi output bisa langsung disimpan sebagai file kunci (make offsite-keygen > kunci.txt).
+# Kunci akses bucket dikosongkan: pembuatan kunci age tidak membutuhkannya.
 offsite-keygen: ## Buat kunci age untuk off-site (kunci privat dicetak sekali: simpan di LUAR server)
-	@$(COMPOSE) run --rm -T --no-deps offsite keygen
+	@$(COMPOSE) run --rm -T --no-deps -e RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID= -e RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY= offsite keygen
+
+# Di luar .env (yang dibaca app/queue/scheduler): hanya service offsite yang memegang kunci akses bucket
+$(OFFSITE_CRED_FILE):
+	@mkdir -p $(dir $@) && chmod 700 $(dir $@)
+	@(umask 077 && printf '%s\n' \
+		'# Kunci akses bucket off-site (S3-compatible); hanya dibaca service offsite' \
+		'RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID=' \
+		'RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY=' > $@)
+	@printf "$(YELLOW)→ $@ dibuat. Isi kunci aksesnya, lalu: docker compose up -d offsite$(RESET)\n"
+
+offsite-credentials: $(OFFSITE_CRED_FILE) ## Buat secrets/offsite.env untuk kunci akses bucket off-site (sekali)
 
 offsite-sync: ## Upload backup ke off-site sekarang (selain sinkron otomatis tiap 30 menit)
-	$(COMPOSE) run --rm -T offsite sync
+	@$(COMPOSE) run --rm -T offsite sync
 
 offsite-list: ## Daftar backup terenkripsi di off-site
-	$(COMPOSE) run --rm -T offsite list
+	@$(COMPOSE) run --rm -T offsite list
 
 # Kunci privat hanya di-mount sementara (read-only) untuk proses ini; hapus lagi dari server setelah restore
 offsite-fetch: ## Unduh + dekripsi backup off-site. Pakai: make offsite-fetch FILE=db-...sql.gz IDENTITY=<file kunci privat>

@@ -139,7 +139,8 @@ Service `offsite` mengenkripsi setiap backup harian dengan [age](https://age-enc
    ```
 
    Pindahkan isi file itu (baris `AGE-SECRET-KEY-...` adalah kunci privat) ke password manager atau penyimpanan aman lain **di luar server**, lalu hapus filenya: `shred -u /tmp/offsite-kunci.txt`. Simpan minimal di dua tempat; kunci yang hilang berarti backup off-site tidak bisa dibuka.
-3. **Isi `.env`**: `OFFSITE_AGE_RECIPIENT` dengan kunci publik (baris `# public key: age1...`), lalu `OFFSITE_S3_*`. Contoh:
+3. **Isi kunci akses bucket** di file terpisah: jalankan `make offsite-credentials`, lalu isi `secrets/offsite.env` (izin `600`). File ini hanya dibaca service `offsite`. `.env` dibaca juga oleh app, queue, dan scheduler, jadi bila aplikasi web dibobol, kunci yang bisa menghapus salinan off-site tidak ikut bocor.
+4. **Isi `.env`**: `OFFSITE_AGE_RECIPIENT` dengan kunci publik (baris `# public key: age1...`), lalu `OFFSITE_S3_*`. Contoh:
 
    | Provider | `OFFSITE_S3_PROVIDER` | `OFFSITE_S3_ENDPOINT` | `OFFSITE_S3_REGION` |
    | --- | --- | --- | --- |
@@ -148,13 +149,13 @@ Service `offsite` mengenkripsi setiap backup harian dengan [age](https://age-enc
    | Backblaze B2 | `Other` | `https://s3.<region>.backblazeb2.com` | mis. `us-west-004` |
    | Wasabi | `Wasabi` | `https://s3.<region>.wasabisys.com` | mis. `ap-southeast-1` |
 
-4. **Terapkan dan uji**: `docker compose up -d offsite`, lalu `make offsite-sync` dan `make offsite-list`. Daftar harus berisi file `db-...sql.gz.age` dan `storage-...tar.gz.age`.
+5. **Terapkan dan uji**: `docker compose up -d offsite`, lalu `make offsite-sync` dan `make offsite-list`. Daftar harus berisi file `db-...sql.gz.age` dan `storage-...tar.gz.age`.
 
 Untuk perlindungan tambahan dari penghapusan (mis. kredensial server dipakai pihak lain), aktifkan *versioning* atau *object lock* di bucket bila provider mendukung.
 
 ### Memulihkan dari off-site
 
-Bila server hilang: siapkan server baru sampai `make setup` selesai, dengan `.env` berisi `OFFSITE_*` yang sama. `APP_KEY` boleh baru; akibatnya hanya semua user harus login ulang. Lalu:
+Bila server hilang: siapkan server baru sampai `make setup` selesai, dengan `OFFSITE_*` di `.env` dan `secrets/offsite.env` yang sama. `APP_KEY` boleh baru; akibatnya hanya semua user harus login ulang. Lalu:
 
 ```bash
 make offsite-list                                   # pilih pasangan db-... dan storage-... terbaru

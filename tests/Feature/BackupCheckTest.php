@@ -135,6 +135,67 @@ class BackupCheckTest extends TestCase
             fn (BackupProblemNotification $n) => array_keys($n->problems) === ['backup_never', 'offsite_missing']);
     }
 
+    public function test_a_resolved_part_of_a_reported_problem_sends_no_new_alert(): void
+    {
+        $this->healthy();
+        $this->writeStatus('backup', ['last_attempt_at' => '2026-10-19T19:00:05Z', 'last_success_at' => '2026-10-19T19:00:05Z', 'last_error' => null]);
+        $this->writeStatus('offsite', ['enabled' => true, 'last_attempt_at' => '2026-10-21T09:45:00Z', 'last_success_at' => null, 'last_error' => 'bucket tidak ditemukan']);
+        Notification::fake();
+        $this->artisan('backups:check')->assertFailed();
+
+        // Off-site pulih, backup harian masih terlambat: tidak ada email baru
+        $this->writeStatus('offsite', ['enabled' => true, 'last_attempt_at' => '2026-10-21T09:45:00Z', 'last_success_at' => '2026-10-21T09:45:00Z', 'last_error' => null]);
+        $this->artisan('backups:check')->assertFailed();
+
+        Notification::assertSentToTimes($this->admin, BackupProblemNotification::class, 1);
+        Notification::assertSentTo($this->admin, BackupProblemNotification::class,
+            fn (BackupProblemNotification $n) => str_contains($n->problems['offsite_stale'], 'Error terakhir: bucket tidak ditemukan'));
+    }
+
+    public function test_a_failed_send_is_retried_on_the_next_check(): void
+    {
+        $this->healthy();
+        $this->writeStatus('backup', ['last_attempt_at' => '2026-10-19T19:00:05Z', 'last_success_at' => '2026-10-19T19:00:05Z', 'last_error' => null]);
+        Notification::partialMock()->shouldReceive('sendNow')->once()->andThrow(new \RuntimeException('SMTP tidak bisa dihubungi'));
+
+        try {
+            $this->artisan('backups:check')->run();
+            $this->fail('Kegagalan kirim email seharusnya tidak ditelan');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('SMTP tidak bisa dihubungi', $e->getMessage());
+        }
+
+        Notification::fake();
+        $this->artisan('backups:check')->assertFailed();
+        Notification::assertSentTo($this->admin, BackupProblemNotification::class);
+    }
+
+    public function test_problems_are_reported_once_an_admin_exists(): void
+    {
+        $this->admin->update(['is_active' => false]);
+        $this->healthy();
+        $this->writeStatus('backup', ['last_attempt_at' => '2026-10-19T19:00:05Z', 'last_success_at' => '2026-10-19T19:00:05Z', 'last_error' => null]);
+        Notification::fake();
+
+        $this->artisan('backups:check')->expectsOutputToContain('Tidak ada admin aktif')->assertFailed();
+
+        $newAdmin = User::factory()->create(['role' => 'admin']);
+        $this->artisan('backups:check')->assertFailed();
+        Notification::assertSentTo($newAdmin, BackupProblemNotification::class);
+    }
+
+    public function test_corrupt_status_files_are_reported_as_such(): void
+    {
+        $this->healthy();
+        File::put("{$this->dir}/backup.json", '{"last_attempt_at": "2026-10-20T19:00:05Z", rusak');
+        Notification::fake();
+
+        $this->artisan('backups:check')->assertFailed();
+
+        Notification::assertSentTo($this->admin, BackupProblemNotification::class,
+            fn (BackupProblemNotification $n) => array_keys($n->problems) === ['backup_status_invalid']);
+    }
+
     public function test_check_is_skipped_without_a_status_path(): void
     {
         config(['backups.status_path' => null]);

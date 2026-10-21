@@ -84,7 +84,8 @@ key_file=$(mktemp)
 make offsite-keygen > "$key_file"
 recipient=$(sed -n 's/^# public key: //p' "$key_file")
 [[ "$recipient" == age1* ]] || fail "make offsite-keygen tidak menghasilkan kunci publik age"
-# S3 lokal (rclone serve s3) dari overlay CI; nilai lain sama seperti pengisian .env di server
+# S3 lokal (rclone serve s3) dari overlay CI; langkah lain sama seperti di server:
+# pengaturan bucket di .env, kunci akses di secrets/offsite.env (tidak terbaca container app)
 cat >> .env <<EOF
 COMPOSE_FILE=compose.yml:.github/compose.offsite-ci.yml
 OFFSITE_AGE_RECIPIENT=${recipient}
@@ -92,18 +93,25 @@ OFFSITE_S3_PROVIDER=Other
 OFFSITE_S3_ENDPOINT=http://s3:9000
 OFFSITE_S3_REGION=us-east-1
 OFFSITE_S3_BUCKET=ci-backups
-OFFSITE_S3_ACCESS_KEY_ID=ci-access-key
-OFFSITE_S3_SECRET_ACCESS_KEY=ci-secret-key
 EOF
+make offsite-credentials
+[ "$(stat -c %a secrets/offsite.env)" = "600" ] || fail "secrets/offsite.env bisa dibaca user lain"
+sed -i -e 's|^RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID=.*|RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID=ci-access-key|' \
+    -e 's|^RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY=.*|RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY=ci-secret-key|' secrets/offsite.env
 # Hanya S3 yang dinyalakan: sinkron dijalankan lewat make di bawah, tidak berbarengan dengan
 # service offsite yang terjadwal (di server cukup: docker compose up -d offsite)
 docker compose up -d s3
 remote=offsite:ci-backups/carbon-tracker
 rclone_ci() { docker compose run --rm -T --no-deps --entrypoint rclone offsite "$@"; }
+s3_ready=no
 for _ in $(seq 1 15); do
-    rclone_ci lsf "offsite:ci-backups" > /dev/null 2>&1 && break
+    rclone_ci lsf "offsite:ci-backups" > /dev/null 2>&1 && { s3_ready=yes; break; }
     sleep 2
 done
+[ "$s3_ready" = yes ] || fail "S3 lokal tidak siap atau kredensial offsite tidak terbaca"
+# Kunci akses bucket hanya untuk service offsite, tidak sampai ke container app
+app_env=$(docker compose exec -T app printenv)
+! grep -q 'RCLONE_CONFIG_OFFSITE\|ci-secret-key' <<< "$app_env" || fail "kunci akses bucket off-site terbaca di container app"
 # Sudah ada di remote: backup sangat lama (dihapus), backup pertama dan pertengahan bulan ~40 hari lalu
 # (yang pertama disimpan sebagai bulanan, yang lain dihapus), dan file lain (tidak boleh disentuh)
 month=$(date -u -d '-40 days' +%Y%m)

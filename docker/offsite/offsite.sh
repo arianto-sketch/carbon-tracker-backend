@@ -50,13 +50,16 @@ write_status() {
         disabled) enabled=false ;;
     esac
     if [ "$1" = failed ]; then
-        # Pesan dari skrip ini sendiri; tanda kutip/backslash dibuang agar JSON tetap valid
-        message=$(printf '%s' "${2:-}" | tr -d '"\\' | tr '\n' ' ')
+        # Pesan bisa memuat nilai env (mis. nama remote): karakter kontrol, kutip, dan backslash dibuang agar JSON valid
+        message=$(printf '%s' "${2:-}" | tr -d '\000-\037"\\')
         error="\"${message}\""
     fi
+    # File sementara unik: jadwal dan `make offsite-sync` bisa menulis status bersamaan
+    local tmp
+    tmp=$(mktemp "${file}.XXXXXX") || return 1
     printf '{"enabled": %s, "last_attempt_at": "%s", "last_success_at": %s, "last_error": %s}\n' \
         "$enabled" "$now" "$( [ -n "$last_success" ] && echo "\"${last_success}\"" || echo null )" "$error" \
-        > "${file}.tmp" && chmod 644 "${file}.tmp" && mv "${file}.tmp" "$file"
+        > "$tmp" && chmod 644 "$tmp" && mv "$tmp" "$file"
 }
 
 # Kosong semua = nonaktif (return 1); terisi sebagian atau salah format = konfigurasi salah (exit)
@@ -67,11 +70,13 @@ check_config() {
     local problem=""
     [ -n "$BUCKET" ] || problem="OFFSITE_S3_BUCKET belum diisi"
     [ -n "$RECIPIENT" ] || problem="OFFSITE_AGE_RECIPIENT belum diisi (kunci publik dari make offsite-keygen)"
+    # Kunci X25519 dari age-keygen (age1 + karakter bech32); jenis kunci age lain tidak didukung
     if [ -n "$RECIPIENT" ] && ! [[ "$RECIPIENT" =~ ^age1[02-9ac-hj-np-z]{20,}$ ]]; then
         problem="OFFSITE_AGE_RECIPIENT bukan kunci publik age (harus diawali age1)"
     fi
     for n in "$INTERVAL_MINUTES" "$KEEP_DAILY" "$KEEP_MONTHLY"; do
-        if ! [[ "$n" =~ ^[0-9]+$ ]] || (( n < 1 )); then
+        # Tanpa nol di depan: "08" akan dibaca bash sebagai bilangan oktal yang tidak valid
+        if ! [[ "$n" =~ ^[1-9][0-9]*$ ]]; then
             problem="OFFSITE_INTERVAL_MINUTES, OFFSITE_KEEP_DAILY, dan OFFSITE_KEEP_MONTHLY harus bilangan bulat >= 1"
         fi
     done
@@ -166,6 +171,17 @@ sync_kind() {
     done
 }
 
+# Satu sinkron dalam satu waktu (jadwal vs `make offsite-sync`): tanpa ini keduanya bisa menghapus file
+# yang sama dan salah satunya tercatat gagal. Kunci di volume status yang dipakai bersama; dilepas
+# begitu subshell selesai (tidak ditahan selama jeda antar-sinkron).
+sync_locked() {
+    if [ -d "$STATUS_DIR" ] && command -v flock > /dev/null; then
+        ( flock 9 && sync_once ) 9> "${STATUS_DIR}/offsite.lock"
+    else
+        sync_once
+    fi
+}
+
 sync_once() {
     local problem
     problem=$(check_config)
@@ -214,7 +230,7 @@ schedule() {
     esac
     log "sinkron ke ${REMOTE} tiap ${INTERVAL_MINUTES} menit; simpan ${KEEP_DAILY} harian + ${KEEP_MONTHLY} bulanan"
     while true; do
-        sync_once || log "GAGAL: sinkron tidak lengkap, dicoba lagi dalam ${INTERVAL_MINUTES} menit"
+        sync_locked || log "GAGAL: sinkron tidak lengkap, dicoba lagi dalam ${INTERVAL_MINUTES} menit"
         sleep "$((INTERVAL_MINUTES * 60))" &
         wait $!
     done
@@ -258,11 +274,14 @@ keygen() {
 case "${1:-schedule}" in
     schedule) schedule ;;
     sync)
-        sync_once
+        sync_locked
         ;;
     list)
         [ -n "$BUCKET" ] || die "OFFSITE_S3_BUCKET belum diisi"
         rclone lsl "$REMOTE"
+        code=$?
+        # 3 = folder belum ada (belum pernah sinkron)
+        if (( code == 3 )); then echo "(kosong)"; elif (( code != 0 )); then exit "$code"; fi
         ;;
     fetch) fetch "${2:-}" ;;
     keygen) keygen ;;
