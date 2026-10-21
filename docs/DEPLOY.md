@@ -23,7 +23,7 @@ Internet ──► caddy :443 (opsional, HTTPS otomatis) ──► web :8080 (ng
 | `app` | Laravel API (php-fpm) |
 | `web` | nginx: menyajikan SPA dan meneruskan `/api` ke `app` |
 | `queue` | Worker antrean: generate laporan Excel dan kirim email notifikasi approval |
-| `scheduler` | Tugas terjadwal: hapus token kedaluwarsa, purge lampiran entri terhapus, ringkasan bulanan, pemeriksaan backup tiap jam |
+| `scheduler` | Tugas terjadwal: hapus token kedaluwarsa, purge lampiran entri terhapus, ringkasan bulanan, pengingat data belum diisi (tanggal 5 dan 10), pemeriksaan backup tiap jam |
 | `mysql` | Database MySQL 8.4 |
 | `backup` | Backup harian database dan lampiran, simpan 14 hari |
 | `offsite` | Salinan backup terenkripsi ke object storage S3-compatible (nonaktif sampai dikonfigurasi) |

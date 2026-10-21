@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\EmissionFactor;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -80,7 +81,7 @@ class DataCompletenessTest extends TestCase
 
     public function test_writers_mark_a_gap_as_no_data_and_can_undo_it(): void
     {
-        $electricity = \App\Models\EmissionFactor::where('slug', 'electricity_jawa_bali')->value('id');
+        $electricity = EmissionFactor::where('slug', 'electricity_jawa_bali')->value('id');
         $payload = ['period_year' => 2026, 'period_month' => 10, 'emission_factor_id' => $electricity];
 
         $this->actingAs($this->member, 'sanctum')->postJson($this->url('/data-gaps/dismissals'), $payload)->assertCreated();

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Services\CarbonTargetService;
 use App\Services\DashboardService;
+use App\Services\DataCompletenessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -101,6 +102,20 @@ class DashboardController extends Controller
         );
 
         return response()->json(['data' => $data]);
+    }
+
+    /** Project yang bisa diakses user dan datanya belum lengkap di bulan terakhir yang sudah lewat */
+    public function dataCompleteness(Request $request, DataCompletenessService $completeness): JsonResponse
+    {
+        $month = $completeness->lastCompleteMonth();
+        $projects = $completeness->expectedProjects($month, $request->user())->get(['id', 'name', 'status', 'start_date', 'end_date']);
+
+        return response()->json(['data' => [
+            'period'       => $month->format('Y-m'),
+            'period_label' => $completeness->label($month),
+            'active_count' => $projects->count(),
+            'incomplete'   => $completeness->gaps($projects, $month),
+        ]]);
     }
 
     private function filters(Request $request, array $keys): array
