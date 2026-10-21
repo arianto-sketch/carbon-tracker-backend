@@ -108,7 +108,7 @@ Lalu ikuti bagian *Test E2E* di [README frontend](https://github.com/arianto-ske
 
 ## Deploy production
 
-Stack Docker untuk VPS (nginx + SPA, PHP-FPM, queue, scheduler, MySQL, backup harian 14 hari, HTTPS opsional via Caddy) dan langkah-langkahnya ada di [docs/DEPLOY.md](docs/DEPLOY.md). Ringkasnya: `make setup`, `make create-admin EMAIL=...`, `make seed-master`; rilis berikutnya cukup `make deploy`. Error production bisa dikirim ke Sentry dengan mengisi `SENTRY_DSN`.
+Stack Docker untuk VPS (nginx + SPA, PHP-FPM, queue, scheduler, MySQL, backup harian 14 hari dengan salinan off-site terenkripsi ke S3 dan email peringatan ke admin, HTTPS opsional via Caddy) dan langkah-langkahnya ada di [docs/DEPLOY.md](docs/DEPLOY.md). Ringkasnya: `make setup`, `make create-admin EMAIL=...`, `make seed-master`; rilis berikutnya cukup `make deploy`. Error production bisa dikirim ke Sentry dengan mengisi `SENTRY_DSN`.
 
 ## CI (GitHub Actions)
 
@@ -117,7 +117,7 @@ Stack Docker untuk VPS (nginx + SPA, PHP-FPM, queue, scheduler, MySQL, backup ha
 | `Tests` (`.github/workflows/tests.yml`) | Setiap PR dan push ke `master` | Pint + Larastan, lalu PHPUnit dengan PHP 8.3 di SQLite dan di MySQL 8.4 |
 | `E2E` (`.github/workflows/e2e.yml`) | Setiap PR dan push ke `master`, dan **setiap hari** | E2E Playwright frontend `main` terhadap backend dari PR/branch ini (MySQL 8.4) |
 | `Security audit` (`.github/workflows/security-audit.yml`) | PR yang mengubah `composer.json`/`composer.lock`, push ke `master`, dan **setiap Senin** | `composer audit --locked` |
-| `Docker` (`.github/workflows/docker.yml`) | Setiap PR dan push ke `master` | Build image production, `make setup`, lalu uji asap: SPA lewat nginx, API, queue worker, backup + restore |
+| `Docker` (`.github/workflows/docker.yml`) | Setiap PR dan push ke `master` | Build image production, `make setup`, lalu uji asap: SPA lewat nginx, API, queue worker, backup + restore, off-site terenkripsi ke S3 lokal (upload, masa simpan, unduh + dekripsi), pemeriksaan status backup |
 
 - Audit dijadwalkan mingguan karena advisory baru bisa muncul walau kode tidak berubah.
 - E2E jalan di kedua arah: repo ini menguji backend terhadap frontend `main`, dan CI repo frontend menguji frontend terhadap `master` backend. Run E2E harian menangkap perubahan di repo frontend yang memengaruhi backend.

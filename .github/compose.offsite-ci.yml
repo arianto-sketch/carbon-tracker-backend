@@ -1,0 +1,13 @@
+# Hanya untuk CI (.github/scripts/docker-smoke.sh): object storage S3 lokal sebagai tujuan service
+# offsite, dilayani `rclone serve s3` dari image offsite yang sama (bucket = folder di /data).
+services:
+  s3:
+    image: ${OFFSITE_IMAGE:-carbon-tracker-offsite}:${APP_VERSION:-local}
+    pull_policy: never
+    entrypoint: ["sh", "-c", "mkdir -p /data/ci-backups && exec rclone serve s3 --addr :9000 --auth-key ci-access-key,ci-secret-key /data"]
+    networks: [internal]
+
+  offsite:
+    depends_on:
+      s3:
+        condition: service_started

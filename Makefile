@@ -18,7 +18,10 @@ COMPOSE        ?= docker compose
 # Ikut nilai FRONTEND_PATH di .env (yang juga dipakai compose) bila ada
 FRONTEND_PATH  ?= $(or $(shell sed -n 's/^FRONTEND_PATH=//p' .env 2>/dev/null | tail -n 1),./carbon-tracker-frontend)
 FRONTEND_REPO  ?= https://github.com/arianto-sketch/carbon-tracker-frontend.git
+# Folder backup di host (sama dengan BACKUP_PATH yang dipakai compose); tujuan make offsite-fetch
+BACKUP_PATH    ?= $(or $(shell sed -n 's/^BACKUP_PATH=//p' .env 2>/dev/null | tail -n 1),./backups)
 ROOT_PW_FILE   := secrets/db_root_password
+OFFSITE_CRED_FILE := secrets/offsite.env
 
 # exec tanpa TTY bila tidak dijalankan dari terminal (script, cron, CI)
 EXEC_TTY := $(shell [ -t 0 ] || echo -T)
@@ -27,6 +30,7 @@ EXEC_TTY := $(shell [ -t 0 ] || echo -T)
 EMAIL   ?=
 NAME    ?= Administrator
 FILE    ?=
+IDENTITY ?=
 SERVICE ?=
 CONFIRM ?=
 
@@ -48,6 +52,7 @@ endif
 .PHONY: help setup secrets frontend key pull build up down restart ps logs shell tinker \
         migrate seed-master create-admin deploy \
         backup backups restore restore-storage \
+        offsite-keygen offsite-credentials offsite-sync offsite-list offsite-fetch \
         compose-check test lint format analyse ci
 
 # ----- Bantuan -----
@@ -85,7 +90,8 @@ frontend: $(FRONTEND_PATH)/package.json ## Clone repo frontend bila belum ada
 key: ## Buat APP_KEY baru (salin hasilnya ke .env)
 	@echo "APP_KEY=base64:$$(openssl rand -base64 32)"
 
-setup: .env secrets frontend build migrate up ## Instalasi pertama: build, migrate, start semua service
+# Backup pertama langsung dibuat: pemeriksaan backup tiap jam tidak melapor "belum ada backup" sampai jadwal harian
+setup: .env secrets frontend build migrate up backup ## Instalasi pertama: build, migrate, start semua service, backup pertama
 	@printf "$(GREEN)✓ Stack berjalan.$(RESET) Berikutnya:\n"
 	@printf "  1. make create-admin EMAIL=<email> NAME=\"Nama\"\n"
 	@printf "  2. make seed-master   (kategori dan faktor emisi bawaan; butuh admin)\n"
@@ -168,6 +174,37 @@ restore-storage: ## Pulihkan lampiran. Pakai: make restore-storage FILE=storage-
 	@# Arsip dibaca service backup (folder backup sama dengan BACKUP_PATH di .env, file hanya bisa dibaca root)
 	$(COMPOSE) run --rm -T --no-deps backup stream "$(FILE)" | $(COMPOSE) exec -T app tar -xzf - -C /var/www/html/storage/app
 	@printf "$(GREEN)✓ Lampiran dipulihkan dari $(FILE)$(RESET)\n"
+
+# ----- Backup off-site -----
+
+# @: baris perintah tidak ikut tercetak, jadi output bisa langsung disimpan sebagai file kunci (make offsite-keygen > kunci.txt).
+# Kunci akses bucket dikosongkan: pembuatan kunci age tidak membutuhkannya.
+offsite-keygen: ## Buat kunci age untuk off-site (kunci privat dicetak sekali: simpan di LUAR server)
+	@$(COMPOSE) run --rm -T --no-deps -e RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID= -e RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY= offsite keygen
+
+# Di luar .env (yang dibaca app/queue/scheduler): hanya service offsite yang memegang kunci akses bucket
+$(OFFSITE_CRED_FILE):
+	@mkdir -p $(dir $@) && chmod 700 $(dir $@)
+	@(umask 077 && printf '%s\n' \
+		'# Kunci akses bucket off-site (S3-compatible); hanya dibaca service offsite' \
+		'RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID=' \
+		'RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY=' > $@)
+	@printf "$(YELLOW)→ $@ dibuat. Isi kunci aksesnya, lalu: docker compose up -d offsite$(RESET)\n"
+
+offsite-credentials: $(OFFSITE_CRED_FILE) ## Buat secrets/offsite.env untuk kunci akses bucket off-site (sekali)
+
+offsite-sync: ## Upload backup ke off-site sekarang (selain sinkron otomatis tiap 30 menit)
+	@$(COMPOSE) run --rm -T offsite sync
+
+offsite-list: ## Daftar backup terenkripsi di off-site
+	@$(COMPOSE) run --rm -T offsite list
+
+# Kunci privat hanya di-mount sementara (read-only) untuk proses ini; hapus lagi dari server setelah restore
+offsite-fetch: ## Unduh + dekripsi backup off-site. Pakai: make offsite-fetch FILE=db-...sql.gz IDENTITY=<file kunci privat>
+	@if [ -z "$(FILE)" ] || [ -z "$(IDENTITY)" ]; then printf "$(RED)Pakai: make offsite-fetch FILE=<db-*.sql.gz|storage-*.tar.gz> IDENTITY=<file kunci privat age> (lihat: make offsite-list)$(RESET)\n"; exit 1; fi
+	@if [ ! -f "$(IDENTITY)" ]; then printf "$(RED)File kunci privat tidak ditemukan: $(IDENTITY)$(RESET)\n"; exit 1; fi
+	$(COMPOSE) run --rm -T -v "$(abspath $(IDENTITY)):/run/age-identity:ro" -v "$(abspath $(BACKUP_PATH)):/restore" offsite fetch "$(FILE)"
+	@printf "$(GREEN)✓ $(FILE) siap di folder backup.$(RESET) Lanjutkan dengan make restore / make restore-storage FILE=$(FILE)\n"
 
 # ----- Development (host) -----
 
